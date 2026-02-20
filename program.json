@@ -1,0 +1,219 @@
+{
+  "profile": {
+    "sex": "Male",
+    "age": 35,
+    "height_cm": 183,
+    "weight_kg": 85,
+    "goal": "Lose fat fast while maintaining muscle and strength",
+    "gym_frequency": "3 times per week",
+    "session_length": "30-40 minutes",
+    "current_issue": "Lifting, but scale movement is slow"
+  },
+  "weekly_structure": {
+    "warmup": "Optional ~5 min",
+    "main": "~25-30 min supersets",
+    "finisher": "Optional ~6-10 min"
+  },
+  "days": {
+    "A": {
+      "title": "Day A - strength-ish",
+      "warmup": "Optional 5 min easy bike/row + 1 light set on first 2 lifts",
+      "main_work": "25-30 min using supersets",
+      "supersets": [
+        {
+          "label": "Superset 1",
+          "exercises": [
+            {
+              "name": "Leg Press",
+              "sets_reps": "3 x 5-8",
+              "note": "Knee-dominant lower",
+              "canonical_key": "leg_press",
+              "alternatives": "Hack squat or goblet squat"
+            },
+            {
+              "name": "Chest-Supported Row",
+              "sets_reps": "3 x 6-8",
+              "note": "Horizontal pull",
+              "canonical_key": "chest_supported_row",
+              "alternatives": "Seated cable row or machine row"
+            }
+          ]
+        },
+        {
+          "label": "Superset 2",
+          "exercises": [
+            {
+              "name": "Flat Dumbbell Bench Press",
+              "sets_reps": "3 x 5-8",
+              "note": "Horizontal push",
+              "canonical_key": "flat_db_bench_press",
+              "alternatives": "Machine chest press or push-ups"
+            },
+            {
+              "name": "Romanian Deadlift",
+              "sets_reps": "3 x 6-8",
+              "note": "Hip hinge",
+              "canonical_key": "romanian_deadlift",
+              "alternatives": "Back extension or hip hinge machine"
+            }
+          ]
+        }
+      ],
+      "core": {
+        "name": "Cable Pallof Press",
+        "sets_reps": "2 x 10-12 per side",
+        "note": "Brief anti-rotation core",
+        "canonical_key": "cable_pallof_press",
+        "alternatives": "Side plank"
+      },
+      "finisher": "Optional 6-8 min: bike/rower intervals, 30 sec hard + 60 sec easy"
+    },
+    "B": {
+      "title": "Day B - volume-ish",
+      "warmup": "Optional 5 min incline walk + 1 light set on first 2 lifts",
+      "main_work": "25-30 min using supersets",
+      "supersets": [
+        {
+          "label": "Superset 1",
+          "exercises": [
+            {
+              "name": "Goblet Squat",
+              "sets_reps": "3 x 8-12",
+              "note": "Knee-dominant lower",
+              "canonical_key": "goblet_squat",
+              "alternatives": "Hack squat machine or leg press"
+            },
+            {
+              "name": "Seated Cable Row",
+              "sets_reps": "3 x 10-12",
+              "note": "Horizontal pull",
+              "canonical_key": "seated_cable_row",
+              "alternatives": "Chest-supported row or machine row"
+            }
+          ]
+        },
+        {
+          "label": "Superset 2",
+          "exercises": [
+            {
+              "name": "Incline Dumbbell Bench Press",
+              "sets_reps": "3 x 8-12",
+              "note": "Horizontal push",
+              "canonical_key": "incline_db_bench_press",
+              "alternatives": "Machine incline press or push-ups"
+            },
+            {
+              "name": "Dumbbell Hip Thrust",
+              "sets_reps": "3 x 10-12",
+              "note": "Hip hinge/glute focus",
+              "canonical_key": "dumbbell_hip_thrust",
+              "alternatives": "Glute bridge"
+            }
+          ]
+        }
+      ],
+      "core": {
+        "name": "Dead Bug",
+        "sets_reps": "2 x 8-10 per side",
+        "note": "Simple trunk control core",
+        "canonical_key": "dead_bug",
+        "alternatives": "Bird dog"
+      },
+      "finisher": "Optional 8-10 min: incline treadmill brisk walk, zone 2-ish effort"
+    },
+    "C": {
+      "title": "Day C - balanced",
+      "warmup": "Optional 5 min easy cardio + dynamic hips/shoulders",
+      "main_work": "25-30 min using supersets",
+      "supersets": [
+        {
+          "label": "Superset 1",
+          "exercises": [
+            {
+              "name": "Dumbbell Split Squat",
+              "sets_reps": "3 x 8-10 per leg",
+              "note": "Knee-dominant unilateral",
+              "canonical_key": "dumbbell_split_squat",
+              "alternatives": "Reverse lunge"
+            },
+            {
+              "name": "Lat Pulldown",
+              "sets_reps": "3 x 8-12",
+              "note": "Vertical pull",
+              "canonical_key": "lat_pulldown",
+              "alternatives": "Assisted pull-up or high cable row"
+            }
+          ]
+        },
+        {
+          "label": "Superset 2",
+          "exercises": [
+            {
+              "name": "Machine Chest Press",
+              "sets_reps": "3 x 8-12",
+              "note": "Horizontal push",
+              "canonical_key": "machine_chest_press",
+              "alternatives": "Push-ups"
+            },
+            {
+              "name": "Cable Pull-Through",
+              "sets_reps": "3 x 10-12",
+              "note": "Hip hinge accessory",
+              "canonical_key": "cable_pull_through",
+              "alternatives": "Back extension"
+            }
+          ]
+        }
+      ],
+      "core": {
+        "name": "Front Plank",
+        "sets_reps": "2 x 30-45 sec",
+        "note": "Simple bracing core",
+        "canonical_key": "front_plank",
+        "alternatives": "RKC plank"
+      },
+      "finisher": "Optional 8 min EMOM: odd min 10 kettlebell swings, even min 8-10 calories bike"
+    }
+  },
+  "substitution_map": [
+    "Leg press <-> hack squat <-> goblet squat",
+    "DB bench <-> machine chest press <-> push-ups",
+    "Cable row <-> chest-supported DB row <-> machine row",
+    "RDL <-> hip hinge machine <-> back extension",
+    "Lat pulldown <-> assisted pull-up <-> high cable row",
+    "Pallof press <-> side plank"
+  ],
+  "superset_rules": [
+    "Pair upper+lower or push+pull.",
+    "Rest about 45-75 sec between rounds.",
+    "Avoid pairing two heavy lower compounds together.",
+    "Keep transitions short and stay at 1-3 reps in reserve."
+  ],
+  "progression_rules": [
+    "Work in the rep range with RIR 1-3 (RPE about 7-9).",
+    "If all sets hit the top of range with good form, add load next session.",
+    "Upper body jumps: +1 to +2.5 kg total.",
+    "Lower body jumps: +2.5 to +5 kg total.",
+    "If stalled 2-3 weeks: deload 1 week (load down 10-15% or one less set), then rebuild.",
+    "Alternative after stall: swap one movement variant for 4-6 weeks."
+  ],
+  "non_gym_guidance": [
+    "Increase daily steps from about 5k to 7k-9k average, ramping gradually.",
+    "Treat e-bike commute as sustainable zone-2-ish effort 1-2 days/week.",
+    "Keep non-gym cardio recoverable, not all-out."
+  ],
+  "fat_loss_non_negotiables": [
+    "Protein: 1.8-2.2 g/kg/day (about 153-187 g/day).",
+    "Sleep: 7-8+ hours per night.",
+    "Steps: weekly average 7k-9k/day.",
+    "Consistency: moderate, sustainable calorie deficit."
+  ],
+  "schedule_example": [
+    "Mon: Day A",
+    "Tue: e-bike commute (zone-2-ish)",
+    "Wed: Day B",
+    "Thu: e-bike commute or extra steps",
+    "Fri: Day C",
+    "Weekend: light activity, recovery, maintain steps"
+  ]
+}
