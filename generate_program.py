@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Modular 3-day gym program workflow:
-1) create-program -> writes program.json
-2) fetch-images -> resolves reusable images for exercises
-3) build-pdf -> renders final PDF from reviewed artifacts
+Program workflow:
+1) profile-create / profile-update
+2) generate-draft -> writes programs/<user>_draft.json
+3) user reviews draft JSON
+4) approve-program -> writes programs/<user>_final.json
+5) fetch-images + build-pdf
 """
 
 from __future__ import annotations
@@ -12,37 +14,26 @@ import argparse
 import io
 import json
 import os
+import platform
 import re
+import shutil
 import sys
 import textwrap
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import requests
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import mm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (
-    Image as RLImage,
-    KeepTogether,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
 
 
-PDF_NAME = "3_day_gym_program.pdf"
-PROGRAM_JSON = Path("program.json")
+PROFILES_DIR = Path("profiles")
+PROGRAMS_DIR = Path("programs")
 ASSETS_DIR = Path("assets")
 IMAGE_MANIFEST = ASSETS_DIR / "image_manifest.json"
+DEFAULT_PDF_NAME = "program_report.pdf"
+DEFAULT_HTML_NAME = "program_report.html"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 REQUEST_TIMEOUT = 20
 
@@ -111,56 +102,75 @@ def read_json(path: Path) -> Dict:
         return json.load(f)
 
 
-def choose_font() -> str:
-    candidates = [
-        ("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
-        ("DejaVuSans", "/Library/Fonts/Arial Unicode.ttf"),
-        ("Arial", "/Library/Fonts/Arial.ttf"),
-    ]
-    for font_name, font_path in candidates:
-        if os.path.exists(font_path):
-            try:
-                pdfmetrics.registerFont(TTFont(font_name, font_path))
-                return font_name
-            except Exception:
-                continue
-    return "Helvetica"
+def program_path(user: str, stage: str) -> Path:
+    return PROGRAMS_DIR / f"{slugify(user)}_{stage}.json"
 
 
-def build_program() -> Dict:
-    profile = {
-        "sex": "Male",
-        "age": 35,
-        "height_cm": 183,
-        "weight_kg": 85,
-        "goal": "Lose fat fast while maintaining muscle and strength",
-        "gym_frequency": "3 times per week",
-        "session_length": "30-40 minutes",
-        "current_issue": "Lifting, but scale movement is slow",
+def profile_path(user: str) -> Path:
+    return PROFILES_DIR / f"{slugify(user)}.json"
+
+
+def default_profile(user: str) -> Dict:
+    return {
+        "user_id": slugify(user),
+        "name": user,
+        "sex": "Prefer not to say",
+        "age": 30,
+        "height_cm": 175,
+        "weight_kg": 75,
+        "goal": "general_fitness",
+        "gym_days": 3,
+        "session_length_minutes": 40,
+        "experience_level": "beginner-intermediate",
+        "equipment": "full_gym",
+        "notes": "",
     }
 
-    def ex(name: str, sets_reps: str, note: str, canonical_key: str, alternatives: str = "") -> Dict:
-        return {
-            "name": name,
-            "sets_reps": sets_reps,
-            "note": note,
-            "canonical_key": canonical_key,
-            "alternatives": alternatives,
-        }
 
-    days = {
-        "A": {
-            "title": "Day A - strength-ish",
-            "warmup": "Optional 5 min easy bike/row + 1 light set on first 2 lifts",
-            "main_work": "25-30 min using supersets",
+def validate_profile(profile: Dict) -> None:
+    required = [
+        "user_id",
+        "name",
+        "age",
+        "height_cm",
+        "weight_kg",
+        "goal",
+        "gym_days",
+        "session_length_minutes",
+        "equipment",
+    ]
+    missing = [k for k in required if k not in profile]
+    if missing:
+        raise ValueError(f"Profile missing fields: {missing}")
+    gym_days = int(profile["gym_days"])
+    if gym_days < 2 or gym_days > 5:
+        raise ValueError("gym_days must be between 2 and 5")
+
+
+def ex(name: str, note: str, canonical_key: str, alternatives: str = "") -> Dict:
+    return {
+        "name": name,
+        "sets_reps": "3 x 8-12",
+        "note": note,
+        "canonical_key": canonical_key,
+        "alternatives": alternatives,
+    }
+
+
+def day_templates() -> List[Dict]:
+    return [
+        {
+            "key": "A",
+            "title": "Day A - lower + pull focus",
+            "warmup": "5 min easy cardio + one light set on first two lifts",
+            "main_work": "Superset style, short transitions, smooth tempo",
             "supersets": [
                 {
                     "label": "Superset 1",
                     "exercises": [
-                        ex("Leg Press", "3 x 5-8", "Knee-dominant lower", "leg_press", "Hack squat or goblet squat"),
+                        ex("Leg Press", "Knee-dominant lower", "leg_press", "Hack squat or goblet squat"),
                         ex(
                             "Chest-Supported Row",
-                            "3 x 6-8",
                             "Horizontal pull",
                             "chest_supported_row",
                             "Seated cable row or machine row",
@@ -172,52 +182,28 @@ def build_program() -> Dict:
                     "exercises": [
                         ex(
                             "Flat Dumbbell Bench Press",
-                            "3 x 5-8",
                             "Horizontal push",
                             "flat_db_bench_press",
                             "Machine chest press or push-ups",
                         ),
-                        ex(
-                            "Romanian Deadlift",
-                            "3 x 6-8",
-                            "Hip hinge",
-                            "romanian_deadlift",
-                            "Back extension or hip hinge machine",
-                        ),
+                        ex("Romanian Deadlift", "Hip hinge", "romanian_deadlift", "Back extension"),
                     ],
                 },
             ],
-            "core": ex(
-                "Cable Pallof Press",
-                "2 x 10-12 per side",
-                "Brief anti-rotation core",
-                "cable_pallof_press",
-                "Side plank",
-            ),
-            "finisher": "Optional 6-8 min: bike/rower intervals, 30 sec hard + 60 sec easy",
+            "core": ex("Cable Pallof Press", "Anti-rotation core", "cable_pallof_press", "Side plank"),
+            "finisher": "Optional 6-8 min intervals: 30 sec hard + 60 sec easy",
         },
-        "B": {
-            "title": "Day B - volume-ish",
-            "warmup": "Optional 5 min incline walk + 1 light set on first 2 lifts",
-            "main_work": "25-30 min using supersets",
+        {
+            "key": "B",
+            "title": "Day B - upper + glute focus",
+            "warmup": "5 min incline walk + shoulder/hip prep",
+            "main_work": "Superset style, controlled eccentric and full range",
             "supersets": [
                 {
                     "label": "Superset 1",
                     "exercises": [
-                        ex(
-                            "Goblet Squat",
-                            "3 x 8-12",
-                            "Knee-dominant lower",
-                            "goblet_squat",
-                            "Hack squat machine or leg press",
-                        ),
-                        ex(
-                            "Seated Cable Row",
-                            "3 x 10-12",
-                            "Horizontal pull",
-                            "seated_cable_row",
-                            "Chest-supported row or machine row",
-                        ),
+                        ex("Goblet Squat", "Knee-dominant lower", "goblet_squat", "Leg press"),
+                        ex("Seated Cable Row", "Horizontal pull", "seated_cable_row", "Machine row"),
                     ],
                 },
                 {
@@ -225,111 +211,184 @@ def build_program() -> Dict:
                     "exercises": [
                         ex(
                             "Incline Dumbbell Bench Press",
-                            "3 x 8-12",
                             "Horizontal push",
                             "incline_db_bench_press",
-                            "Machine incline press or push-ups",
+                            "Machine incline press",
                         ),
-                        ex(
-                            "Dumbbell Hip Thrust",
-                            "3 x 10-12",
-                            "Hip hinge/glute focus",
-                            "dumbbell_hip_thrust",
-                            "Glute bridge",
-                        ),
+                        ex("Dumbbell Hip Thrust", "Glute/hinge", "dumbbell_hip_thrust", "Glute bridge"),
                     ],
                 },
             ],
-            "core": ex("Dead Bug", "2 x 8-10 per side", "Simple trunk control core", "dead_bug", "Bird dog"),
-            "finisher": "Optional 8-10 min: incline treadmill brisk walk, zone 2-ish effort",
+            "core": ex("Dead Bug", "Simple trunk control core", "dead_bug", "Bird dog"),
+            "finisher": "Optional 8-10 min brisk incline treadmill walk",
         },
-        "C": {
-            "title": "Day C - balanced",
-            "warmup": "Optional 5 min easy cardio + dynamic hips/shoulders",
-            "main_work": "25-30 min using supersets",
+        {
+            "key": "C",
+            "title": "Day C - balanced full-body",
+            "warmup": "5 min easy cardio + dynamic mobility",
+            "main_work": "Superset style, keep 1-3 reps in reserve",
             "supersets": [
                 {
                     "label": "Superset 1",
                     "exercises": [
-                        ex(
-                            "Dumbbell Split Squat",
-                            "3 x 8-10 per leg",
-                            "Knee-dominant unilateral",
-                            "dumbbell_split_squat",
-                            "Reverse lunge",
-                        ),
-                        ex("Lat Pulldown", "3 x 8-12", "Vertical pull", "lat_pulldown", "Assisted pull-up or high cable row"),
+                        ex("Dumbbell Split Squat", "Unilateral knee-dominant", "dumbbell_split_squat", "Reverse lunge"),
+                        ex("Lat Pulldown", "Vertical pull", "lat_pulldown", "Assisted pull-up"),
                     ],
                 },
                 {
                     "label": "Superset 2",
                     "exercises": [
-                        ex(
-                            "Machine Chest Press",
-                            "3 x 8-12",
-                            "Horizontal push",
-                            "machine_chest_press",
-                            "Push-ups",
-                        ),
-                        ex("Cable Pull-Through", "3 x 10-12", "Hip hinge accessory", "cable_pull_through", "Back extension"),
+                        ex("Machine Chest Press", "Horizontal push", "machine_chest_press", "Push-ups"),
+                        ex("Cable Pull-Through", "Hip hinge accessory", "cable_pull_through", "Back extension"),
                     ],
                 },
             ],
-            "core": ex("Front Plank", "2 x 30-45 sec", "Simple bracing core", "front_plank", "RKC plank"),
-            "finisher": "Optional 8 min EMOM: odd min 10 kettlebell swings, even min 8-10 calories bike",
+            "core": ex("Front Plank", "Bracing core", "front_plank", "RKC plank"),
+            "finisher": "Optional 8 min EMOM: swings/bike calories",
         },
-    }
+        {
+            "key": "D",
+            "title": "Day D - overhead + single-leg",
+            "warmup": "5 min bike + shoulder mobility",
+            "main_work": "Superset style, rest 45-75 sec between rounds",
+            "supersets": [
+                {
+                    "label": "Superset 1",
+                    "exercises": [
+                        ex("Overhead Dumbbell Press", "Vertical push", "overhead_db_press", "Machine shoulder press"),
+                        ex("One-Arm Cable Row", "Horizontal pull", "one_arm_cable_row", "Chest-supported row"),
+                    ],
+                },
+                {
+                    "label": "Superset 2",
+                    "exercises": [
+                        ex("Bulgarian Split Squat", "Unilateral lower", "bulgarian_split_squat", "Walking lunge"),
+                        ex("Hamstring Curl Machine", "Posterior chain accessory", "hamstring_curl_machine", "Swiss ball curl"),
+                    ],
+                },
+            ],
+            "core": ex("Side Plank", "Anti-lateral flexion core", "side_plank", "Pallof press"),
+            "finisher": "Optional 6-8 min rower intervals",
+        },
+        {
+            "key": "E",
+            "title": "Day E - posterior chain + pull",
+            "warmup": "5 min row + light movement prep",
+            "main_work": "Superset style, controlled reps with full lockout",
+            "supersets": [
+                {
+                    "label": "Superset 1",
+                    "exercises": [
+                        ex("Trap Bar Deadlift", "Primary hinge", "trap_bar_deadlift", "Romanian deadlift"),
+                        ex("Incline Push-up", "Upper push accessory", "incline_push_up", "Machine chest press"),
+                    ],
+                },
+                {
+                    "label": "Superset 2",
+                    "exercises": [
+                        ex("Walking Lunge", "Knee-dominant lower", "walking_lunge", "Split squat"),
+                        ex("Assisted Pull-up", "Vertical pull", "assisted_pull_up", "Lat pulldown"),
+                    ],
+                },
+            ],
+            "core": ex("Bird Dog", "Simple spinal stability", "bird_dog", "Dead bug"),
+            "finisher": "Optional 8 min moderate bike",
+        },
+    ]
 
-    return {
+
+def apply_goal_rules(program: Dict, goal: str) -> None:
+    goal_key = slugify(goal)
+    first_pair = "4 x 4-6"
+    second_pair = "3 x 6-8"
+    core_scheme = "2 x 30-45 sec or 8-12 reps"
+    finisher = "Optional 6-10 min easy conditioning"
+
+    if goal_key == "fat_loss":
+        first_pair = "3 x 8-12"
+        second_pair = "3 x 10-15"
+        core_scheme = "2 x 10-12 reps or 30-45 sec"
+        finisher = "Optional 8-12 min zone-2 or intervals"
+    elif goal_key == "muscle_gain":
+        first_pair = "4 x 6-10"
+        second_pair = "3 x 8-12"
+        core_scheme = "3 x 10-15 reps or 30-60 sec"
+        finisher = "Optional 6-8 min easy cardio"
+    elif goal_key == "general_fitness":
+        first_pair = "3 x 6-10"
+        second_pair = "3 x 8-12"
+        core_scheme = "2 x 10-12 reps or 30-45 sec"
+
+    for day in program["days"].values():
+        for idx, superset in enumerate(day["supersets"]):
+            scheme = first_pair if idx == 0 else second_pair
+            for exercise in superset["exercises"]:
+                exercise["sets_reps"] = scheme
+        day["core"]["sets_reps"] = core_scheme
+        day["finisher"] = finisher
+
+
+def build_program(profile: Dict, days: int, goal: str) -> Dict:
+    templates = day_templates()
+    selected = templates[:days]
+
+    program_days = {}
+    for day in selected:
+        program_days[day["key"]] = {
+            "title": day["title"],
+            "warmup": day["warmup"],
+            "main_work": day["main_work"],
+            "supersets": day["supersets"],
+            "core": day["core"],
+            "finisher": day["finisher"],
+        }
+
+    program = {
         "profile": profile,
+        "goal": goal,
         "weekly_structure": {
-            "warmup": "Optional ~5 min",
-            "main": "~25-30 min supersets",
-            "finisher": "Optional ~6-10 min",
+            "warmup": "5 minutes",
+            "main": "25-35 minutes supersets",
+            "finisher": "5-10 minutes optional",
         },
-        "days": days,
+        "days": program_days,
         "substitution_map": [
             "Leg press <-> hack squat <-> goblet squat",
             "DB bench <-> machine chest press <-> push-ups",
-            "Cable row <-> chest-supported DB row <-> machine row",
-            "RDL <-> hip hinge machine <-> back extension",
-            "Lat pulldown <-> assisted pull-up <-> high cable row",
-            "Pallof press <-> side plank",
+            "Cable row <-> chest-supported row <-> machine row",
+            "RDL/Trap bar <-> hinge machine <-> back extension",
+            "Lat pulldown <-> assisted pull-up",
+            "Pallof press <-> plank variants",
         ],
         "superset_rules": [
-            "Pair upper+lower or push+pull.",
-            "Rest about 45-75 sec between rounds.",
-            "Avoid pairing two heavy lower compounds together.",
-            "Keep transitions short and stay at 1-3 reps in reserve.",
+            "Pair upper+lower or push+pull when possible.",
+            "Rest 45-75 sec between rounds.",
+            "Keep transitions short and stable.",
+            "Stop sets with 1-3 reps in reserve.",
         ],
         "progression_rules": [
-            "Work in the rep range with RIR 1-3 (RPE about 7-9).",
-            "If all sets hit the top of range with good form, add load next session.",
-            "Upper body jumps: +1 to +2.5 kg total.",
-            "Lower body jumps: +2.5 to +5 kg total.",
-            "If stalled 2-3 weeks: deload 1 week (load down 10-15% or one less set), then rebuild.",
-            "Alternative after stall: swap one movement variant for 4-6 weeks.",
+            "Hit the top of the rep range before adding weight.",
+            "Upper body: add 1-2.5 kg total when ready.",
+            "Lower body: add 2.5-5 kg total when ready.",
+            "If stalled 2-3 weeks, deload 1 week and rebuild.",
         ],
         "non_gym_guidance": [
-            "Increase daily steps from about 5k to 7k-9k average, ramping gradually.",
-            "Treat e-bike commute as sustainable zone-2-ish effort 1-2 days/week.",
-            "Keep non-gym cardio recoverable, not all-out.",
+            "Keep daily steps consistent and gradually increase.",
+            "Use low-intensity cardio for recovery, not exhaustion.",
+            "Prioritize hydration and sleep.",
         ],
         "fat_loss_non_negotiables": [
-            "Protein: 1.8-2.2 g/kg/day (about 153-187 g/day).",
-            "Sleep: 7-8+ hours per night.",
-            "Steps: weekly average 7k-9k/day.",
-            "Consistency: moderate, sustainable calorie deficit.",
+            "Protein target: 1.8-2.2 g/kg/day.",
+            "Sleep: 7-8+ hours.",
+            "Progressive overload with good form.",
+            "Nutrition aligned to goal and adherence.",
         ],
-        "schedule_example": [
-            "Mon: Day A",
-            "Tue: e-bike commute (zone-2-ish)",
-            "Wed: Day B",
-            "Thu: e-bike commute or extra steps",
-            "Fri: Day C",
-            "Weekend: light activity, recovery, maintain steps",
-        ],
+        "schedule_example": [f"Day {day_key}: training" for day_key in program_days.keys()],
     }
+
+    apply_goal_rules(program, goal)
+    validate_program_constraints(program)
+    return program
 
 
 def exercise_query_map() -> Dict[str, List[str]]:
@@ -349,6 +408,16 @@ def exercise_query_map() -> Dict[str, List[str]]:
         "machine_chest_press": ["chest press machine exercise"],
         "cable_pull_through": ["cable pull through exercise"],
         "front_plank": ["front plank exercise"],
+        "overhead_db_press": ["dumbbell overhead press exercise"],
+        "one_arm_cable_row": ["one arm cable row exercise"],
+        "bulgarian_split_squat": ["bulgarian split squat exercise"],
+        "hamstring_curl_machine": ["hamstring curl machine exercise"],
+        "side_plank": ["side plank exercise"],
+        "trap_bar_deadlift": ["trap bar deadlift exercise"],
+        "incline_push_up": ["incline push up exercise"],
+        "walking_lunge": ["walking lunge exercise"],
+        "assisted_pull_up": ["assisted pull up machine exercise"],
+        "bird_dog": ["bird dog core exercise"],
     }
 
 
@@ -429,10 +498,10 @@ def collect_unique_exercises(program: Dict) -> List[Dict]:
     seen = set()
     for day in program["days"].values():
         for superset in day["supersets"]:
-            for ex in superset["exercises"]:
-                if ex["canonical_key"] not in seen:
-                    seen.add(ex["canonical_key"])
-                    out.append(ex)
+            for exercise in superset["exercises"]:
+                if exercise["canonical_key"] not in seen:
+                    seen.add(exercise["canonical_key"])
+                    out.append(exercise)
         core = day["core"]
         if core["canonical_key"] not in seen:
             seen.add(core["canonical_key"])
@@ -445,9 +514,9 @@ def resolve_images_for_program(program: Dict) -> Dict:
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     records: List[CreditEntry] = []
 
-    for ex in collect_unique_exercises(program):
-        key = ex["canonical_key"]
-        exercise_name = ex["name"]
+    for exercise in collect_unique_exercises(program):
+        key = exercise["canonical_key"]
+        exercise_name = exercise["name"]
         jpg_path = ASSETS_DIR / f"{slugify(key)}.jpg"
         png_placeholder_path = ASSETS_DIR / f"{slugify(key)}_placeholder.png"
 
@@ -517,7 +586,6 @@ def resolve_images_for_program(program: Dict) -> Dict:
         records.append(chosen)
 
     manifest = {
-        "generated_from": str(PROGRAM_JSON),
         "credits": [asdict(x) for x in records],
     }
     write_json(IMAGE_MANIFEST, manifest)
@@ -540,17 +608,17 @@ def validate_program_constraints(program: Dict) -> None:
         names = " ".join(ex["name"].lower() for ss in day["supersets"] for ex in ss["exercises"]) + " " + day["core"][
             "name"
         ].lower()
-        if any(k in names for k in ["leg press", "squat", "split squat"]):
+        if any(k in names for k in ["leg press", "squat", "split squat", "lunge"]):
             movement_hits["knee_dominant"] = True
-        if any(k in names for k in ["deadlift", "hip thrust", "pull-through", "back extension"]):
+        if any(k in names for k in ["deadlift", "hip thrust", "pull-through", "back extension", "hamstring curl"]):
             movement_hits["hinge"] = True
-        if any(k in names for k in ["bench press", "chest press", "push-up"]):
+        if any(k in names for k in ["bench press", "chest press", "push-up", "overhead"]):
             movement_hits["horizontal_push"] = True
         if "row" in names:
             movement_hits["horizontal_pull"] = True
         if any(k in names for k in ["lat pulldown", "pull-up", "overhead"]):
             movement_hits["vertical"] = True
-        if any(k in names for k in ["plank", "dead bug", "pallof"]):
+        if any(k in names for k in ["plank", "dead bug", "pallof", "bird dog"]):
             movement_hits["core"] = True
     if not all(4 <= n <= 6 for n in per_day_counts):
         raise ValueError("Each day must have 4-6 exercises including core.")
@@ -559,214 +627,232 @@ def validate_program_constraints(program: Dict) -> None:
         raise ValueError(f"Program missing movement patterns: {missing}")
 
 
-def boxed_section(title: str, lines: List[str], styles, color_hex: str = "#f6f8fb") -> Table:
-    text = f"<b>{ascii_clean(title)}</b><br/>" + "<br/>".join(f"- {ascii_clean(x)}" for x in lines)
-    table = Table([[Paragraph(text, styles["BodyText"])]] , colWidths=[180 * mm])
-    table.setStyle(
-        TableStyle(
-            [
-                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#2f3b4b")),
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(color_hex)),
-                ("LEFTPADDING", (0, 0), (-1, -1), 9),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 9),
-                ("TOPPADDING", (0, 0), (-1, -1), 7),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-            ]
-        )
-    )
-    return table
-
-
 def load_image_index_from_manifest(manifest: Dict) -> Dict[str, Dict]:
     return {row["canonical_key"]: row for row in manifest.get("credits", [])}
 
 
-def render_day_table(day: Dict, image_index: Dict[str, Dict], styles) -> Table:
-    rows = [["Image", "Exercise", "Sets x reps", "Notes / substitutions"]]
-    for superset in day["supersets"]:
-        for ex in superset["exercises"]:
-            path = image_index.get(ex["canonical_key"], {}).get("image_path", "")
-            image_cell = Paragraph("-", styles["BodyText"])
-            if path and Path(path).exists():
-                image_cell = RLImage(path, width=26 * mm, height=17 * mm)
-            rows.append(
-                [
-                    image_cell,
-                    Paragraph(ascii_clean(ex["name"]), styles["BodyText"]),
-                    Paragraph(ascii_clean(ex["sets_reps"]), styles["BodyText"]),
-                    Paragraph(ascii_clean(f"{ex['note']}. Alt: {ex['alternatives']}"), styles["BodyText"]),
-                ]
-            )
-
-    core = day["core"]
-    core_path = image_index.get(core["canonical_key"], {}).get("image_path", "")
-    core_cell = Paragraph("-", styles["BodyText"])
-    if core_path and Path(core_path).exists():
-        core_cell = RLImage(core_path, width=26 * mm, height=17 * mm)
-    rows.append(
-        [
-            core_cell,
-            Paragraph(ascii_clean(core["name"] + " (core)"), styles["BodyText"]),
-            Paragraph(ascii_clean(core["sets_reps"]), styles["BodyText"]),
-            Paragraph(ascii_clean(f"{core['note']}. Alt: {core['alternatives']}"), styles["BodyText"]),
-        ]
-    )
-
-    table = Table(rows, colWidths=[30 * mm, 47 * mm, 25 * mm, 78 * mm], hAlign="LEFT")
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#9aa3b2")),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f9fc")]),
-            ]
-        )
-    )
-    return table
-
-
-def build_pdf(program: Dict, manifest: Dict) -> None:
-    font_name = choose_font()
-    styles = getSampleStyleSheet()
-    for name in ["Normal", "BodyText", "Heading1", "Heading2", "Heading3"]:
-        styles[name].fontName = font_name
-
-    title_style = ParagraphStyle(
-        "TitleStyle",
-        parent=styles["Heading1"],
-        fontName=font_name,
-        fontSize=20,
-        leading=23,
-        textColor=colors.HexColor("#0f172a"),
-    )
-    subtitle_style = ParagraphStyle(
-        "SubtitleStyle",
-        parent=styles["BodyText"],
-        fontName=font_name,
-        fontSize=10,
-        leading=12.5,
-        textColor=colors.HexColor("#334155"),
-    )
-
-    doc = SimpleDocTemplate(
-        PDF_NAME,
-        pagesize=A4,
-        leftMargin=14 * mm,
-        rightMargin=14 * mm,
-        topMargin=13 * mm,
-        bottomMargin=13 * mm,
-        title="3 Day Gym Program",
-    )
-
-    p = program["profile"]
+def build_html_context(program: Dict, manifest: Dict, user: str, stage: str) -> Dict:
+    profile = program["profile"]
     image_index = load_image_index_from_manifest(manifest)
-    story = []
-    story.append(Paragraph("3-Day Full-Body Gym Program", title_style))
-    story.append(Spacer(1, 1.5 * mm))
-    story.append(
-        Paragraph(
-            "Fat-loss focused, strength-retention plan. 3 gym days/week. 30-40 min sessions. Simple and repeatable.",
-            subtitle_style,
-        )
-    )
-    story.append(Spacer(1, 1.2 * mm))
-    story.append(
-        Paragraph(
-            f"Stats: {p['sex']}, {p['age']} y, {p['height_cm']} cm, {p['weight_kg']} kg | Goal: {ascii_clean(p['goal'])}",
-            styles["BodyText"],
-        )
-    )
-    story.append(Spacer(1, 3 * mm))
-    story.append(
-        boxed_section(
-            "Session structure",
-            [
-                f"Warm-up: {program['weekly_structure']['warmup']}",
-                f"Main work: {program['weekly_structure']['main']}",
-                f"Finisher: {program['weekly_structure']['finisher']}",
-            ],
-            styles,
-            "#eef4ff",
-        )
-    )
-    story.append(Spacer(1, 3 * mm))
 
-    for day_key in ["A", "B", "C"]:
-        day = program["days"][day_key]
-        block = [
-            Paragraph(f"<b>{ascii_clean(day['title'])}</b>", styles["Heading2"]),
-            Paragraph(ascii_clean(day["warmup"]), styles["BodyText"]),
-            Paragraph(ascii_clean(day["main_work"]), styles["BodyText"]),
-            Spacer(1, 1.2 * mm),
-            render_day_table(day, image_index, styles),
-            Spacer(1, 1.2 * mm),
-            Paragraph(ascii_clean(day["finisher"]), styles["BodyText"]),
-            Spacer(1, 3 * mm),
-        ]
-        story.append(KeepTogether(block))
+    day_views: List[Dict] = []
+    for day_key, day in program["days"].items():
+        rows = []
+        for superset in day["supersets"]:
+            for exercise in superset["exercises"]:
+                image_path = image_index.get(exercise["canonical_key"], {}).get("image_path")
+                image_uri = Path(image_path).resolve().as_uri() if image_path and Path(image_path).exists() else ""
+                rows.append(
+                    {
+                        "name": ascii_clean(exercise["name"]),
+                        "sets_reps": ascii_clean(exercise["sets_reps"]),
+                        "notes": ascii_clean(f"{exercise['note']}. Alt: {exercise['alternatives']}"),
+                        "image_uri": image_uri,
+                    }
+                )
 
-    story.append(boxed_section("Superset rules", program["superset_rules"], styles, "#eefbf4"))
-    story.append(Spacer(1, 2 * mm))
-    story.append(boxed_section("Progression", program["progression_rules"], styles, "#fff8ec"))
-    story.append(Spacer(1, 2 * mm))
-    story.append(boxed_section("Fat loss non-negotiables", program["fat_loss_non_negotiables"], styles, "#ffeef1"))
-    story.append(Spacer(1, 2 * mm))
-    story.append(boxed_section("How to schedule the week (example)", program["schedule_example"], styles, "#f2f2ff"))
-    story.append(Spacer(1, 2 * mm))
-    story.append(boxed_section("Non-gym day guidance", program["non_gym_guidance"], styles, "#eef6ff"))
-    story.append(Spacer(1, 4 * mm))
-
-    story.append(Paragraph("<b>Image credits</b>", styles["Heading2"]))
-    credit_rows = [["Exercise", "Image title", "Author", "Source URL", "License"]]
-    for row in manifest.get("credits", []):
-        credit_rows.append(
-            [
-                Paragraph(ascii_clean(row["exercise"]), styles["BodyText"]),
-                Paragraph(ascii_clean(row["title"]), styles["BodyText"]),
-                Paragraph(ascii_clean(row["author"]), styles["BodyText"]),
-                Paragraph(ascii_clean(row["source_url"]), styles["BodyText"]),
-                Paragraph(ascii_clean(row["license"]), styles["BodyText"]),
-            ]
+        core = day["core"]
+        core_path = image_index.get(core["canonical_key"], {}).get("image_path")
+        core_uri = Path(core_path).resolve().as_uri() if core_path and Path(core_path).exists() else ""
+        rows.append(
+            {
+                "name": ascii_clean(core["name"] + " (core)"),
+                "sets_reps": ascii_clean(core["sets_reps"]),
+                "notes": ascii_clean(f"{core['note']}. Alt: {core['alternatives']}"),
+                "image_uri": core_uri,
+            }
         )
 
-    credit_table = Table(credit_rows, colWidths=[30 * mm, 38 * mm, 25 * mm, 49 * mm, 38 * mm], hAlign="LEFT")
-    credit_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#a7adb7")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
-            ]
+        day_views.append(
+            {
+                "day_key": day_key,
+                "title": ascii_clean(day["title"]),
+                "warmup": ascii_clean(day["warmup"]),
+                "main_work": ascii_clean(day["main_work"]),
+                "finisher": ascii_clean(day["finisher"]),
+                "rows": rows,
+            }
         )
-    )
-    story.append(credit_table)
-    doc.build(story)
+
+    return {
+        "generated_for": ascii_clean(user),
+        "stage": ascii_clean(stage),
+        "profile": ensure_ascii_structure(profile),
+        "goal": ascii_clean(program.get("goal", "general_fitness")),
+        "weekly_structure": ensure_ascii_structure(program["weekly_structure"]),
+        "days": day_views,
+        "superset_rules": [ascii_clean(x) for x in program["superset_rules"]],
+        "progression_rules": [ascii_clean(x) for x in program["progression_rules"]],
+        "fat_loss_non_negotiables": [ascii_clean(x) for x in program["fat_loss_non_negotiables"]],
+        "non_gym_guidance": [ascii_clean(x) for x in program["non_gym_guidance"]],
+        "schedule_example": [ascii_clean(x) for x in program["schedule_example"]],
+        "credits": [
+            {
+                "exercise": ascii_clean(row.get("exercise", "")),
+                "title": ascii_clean(row.get("title", "")),
+                "author": ascii_clean(row.get("author", "")),
+                "source_url": ascii_clean(row.get("source_url", "")),
+                "license": ascii_clean(row.get("license", "")),
+            }
+            for row in manifest.get("credits", [])
+        ],
+    }
 
 
-def cmd_create_program(args) -> int:
-    program = build_program()
-    validate_program_constraints(program)
-    write_json(PROGRAM_JSON, program)
-    print(f"Created {PROGRAM_JSON}. Review and edit it before the next step.")
+def render_pdf_html(context: Dict, out_pdf: Path, out_html: Optional[Path]) -> None:
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+    template_dir = Path("templates")
+    template_name = "program_pdf.html.j2"
+    css_name = "program_pdf.css"
+
+    if not template_dir.exists():
+        raise FileNotFoundError("templates/ directory not found")
+    css_path = template_dir / css_name
+    if not css_path.exists():
+        raise FileNotFoundError(f"CSS template not found: {css_path}")
+
+    env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=select_autoescape(("html", "xml")))
+    template = env.get_template(template_name)
+    css = css_path.read_text(encoding="utf-8")
+    html = template.render(css=css, **context)
+
+    if out_html:
+        out_html.parent.mkdir(parents=True, exist_ok=True)
+        out_html.write_text(html, encoding="utf-8")
+
+    cache_dir = Path(".cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("XDG_CACHE_HOME", str(cache_dir.resolve()))
+
+    if platform.system() == "Darwin":
+        candidates = ["/opt/homebrew/lib", "/usr/local/lib"]
+        existing = [p for p in os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "").split(":") if p]
+        merged = []
+        for path in candidates + existing:
+            if path and path not in merged:
+                merged.append(path)
+        os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(merged)
+
+    try:
+        from weasyprint import HTML
+    except Exception as exc:
+        raise RuntimeError(
+            "WeasyPrint import failed. Install weasyprint and platform libs (pango/cairo/gdk-pixbuf/glib/libffi)."
+        ) from exc
+
+    out_pdf.parent.mkdir(parents=True, exist_ok=True)
+    HTML(string=html, base_url=str(Path.cwd())).write_pdf(str(out_pdf))
+
+
+def cmd_profile_create(args) -> int:
+    path = profile_path(args.user)
+    if path.exists() and not args.force:
+        raise FileExistsError(f"Profile already exists: {path}. Use --force to overwrite.")
+
+    profile = default_profile(args.user)
+    if args.name:
+        profile["name"] = args.name
+    if args.sex:
+        profile["sex"] = args.sex
+    if args.age is not None:
+        profile["age"] = args.age
+    if args.height_cm is not None:
+        profile["height_cm"] = args.height_cm
+    if args.weight_kg is not None:
+        profile["weight_kg"] = args.weight_kg
+    if args.goal:
+        profile["goal"] = slugify(args.goal)
+    if args.gym_days is not None:
+        profile["gym_days"] = args.gym_days
+    if args.session_length_minutes is not None:
+        profile["session_length_minutes"] = args.session_length_minutes
+    if args.equipment:
+        profile["equipment"] = slugify(args.equipment)
+    if args.notes:
+        profile["notes"] = args.notes
+
+    validate_profile(profile)
+    write_json(path, profile)
+    print(f"Created profile: {path}")
+    return 0
+
+
+def cmd_profile_show(args) -> int:
+    path = profile_path(args.user)
+    if not path.exists():
+        raise FileNotFoundError(f"Profile not found: {path}. Run profile-create first.")
+    profile = read_json(path)
+    print(json.dumps(profile, indent=2))
+    return 0
+
+
+def cmd_profile_update(args) -> int:
+    path = profile_path(args.user)
+    if not path.exists():
+        raise FileNotFoundError(f"Profile not found: {path}. Run profile-create first.")
+    profile = read_json(path)
+
+    for item in args.set or []:
+        if "=" not in item:
+            raise ValueError(f"Invalid --set value '{item}'. Use key=value.")
+        key, raw = item.split("=", 1)
+        key = key.strip()
+        raw = raw.strip()
+        if not key:
+            raise ValueError(f"Invalid key in --set value '{item}'.")
+
+        if raw.isdigit():
+            value = int(raw)
+        else:
+            try:
+                value = float(raw)
+                if value.is_integer():
+                    value = int(value)
+            except ValueError:
+                value = raw
+        profile[key] = value
+
+    validate_profile(profile)
+    write_json(path, profile)
+    print(f"Updated profile: {path}")
+    return 0
+
+
+def cmd_generate_draft(args) -> int:
+    p_path = profile_path(args.user)
+    if not p_path.exists():
+        raise FileNotFoundError(f"Profile not found: {p_path}. Run profile-create first.")
+    profile = read_json(p_path)
+    validate_profile(profile)
+
+    days = args.days if args.days is not None else int(profile.get("gym_days", 3))
+    goal = args.goal if args.goal else str(profile.get("goal", "general_fitness"))
+    program = build_program(profile, days=days, goal=goal)
+    draft_path = program_path(args.user, "draft")
+    write_json(draft_path, program)
+    print(f"Created draft program: {draft_path}")
+    print("Review and edit this file before approval.")
+    return 0
+
+
+def cmd_approve_program(args) -> int:
+    draft_path = program_path(args.user, "draft")
+    final_path = program_path(args.user, "final")
+    if not draft_path.exists():
+        raise FileNotFoundError(f"Draft program not found: {draft_path}. Run generate-draft first.")
+
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(draft_path, final_path)
+    print(f"Approved program: {final_path}")
     return 0
 
 
 def cmd_fetch_images(args) -> int:
-    if not PROGRAM_JSON.exists():
-        raise FileNotFoundError(f"{PROGRAM_JSON} not found. Run create-program first.")
-    program = read_json(PROGRAM_JSON)
+    p_path = program_path(args.user, args.stage)
+    if not p_path.exists():
+        raise FileNotFoundError(f"Program not found: {p_path}")
+    program = read_json(p_path)
     validate_program_constraints(program)
     manifest = resolve_images_for_program(program)
     commons_count = sum(1 for x in manifest["credits"] if x["kind"] == "commons")
@@ -776,42 +862,100 @@ def cmd_fetch_images(args) -> int:
 
 
 def cmd_build_pdf(args) -> int:
-    if not PROGRAM_JSON.exists():
-        raise FileNotFoundError(f"{PROGRAM_JSON} not found. Run create-program first.")
+    p_path = program_path(args.user, args.stage)
+    if not p_path.exists():
+        raise FileNotFoundError(f"Program not found: {p_path}")
     if not IMAGE_MANIFEST.exists():
         raise FileNotFoundError(f"{IMAGE_MANIFEST} not found. Run fetch-images first.")
-    program = read_json(PROGRAM_JSON)
+
+    program = read_json(p_path)
     manifest = read_json(IMAGE_MANIFEST)
     validate_program_constraints(program)
-    build_pdf(program, manifest)
-    print(f"Created {PDF_NAME}.")
+
+    out_pdf = Path(args.out) if args.out else Path(DEFAULT_PDF_NAME)
+    out_html = Path(args.html_out) if args.html_out else None
+    context = build_html_context(program, manifest, user=args.user, stage=args.stage)
+    render_pdf_html(context, out_pdf=out_pdf, out_html=out_html)
+    print(f"Created PDF: {out_pdf}")
+    if out_html:
+        print(f"Wrote HTML preview: {out_html}")
     return 0
 
 
 def cmd_all(args) -> int:
-    cmd_create_program(args)
+    cmd_generate_draft(args)
+    if args.auto_approve:
+        cmd_approve_program(args)
+        args.stage = "final"
+    else:
+        args.stage = "draft"
     cmd_fetch_images(args)
     cmd_build_pdf(args)
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Modular gym program generator: create program, fetch images, then build PDF."
-    )
+    parser = argparse.ArgumentParser(description="Personal training program generator with profile + review workflow.")
     sub = parser.add_subparsers(dest="command")
 
-    p_create = sub.add_parser("create-program", help="Generate program.json only.")
-    p_create.set_defaults(func=cmd_create_program)
+    p_profile_create = sub.add_parser("profile-create", help="Create a user profile JSON.")
+    p_profile_create.add_argument("--user", default="default")
+    p_profile_create.add_argument("--name")
+    p_profile_create.add_argument("--sex")
+    p_profile_create.add_argument("--age", type=int)
+    p_profile_create.add_argument("--height-cm", type=int)
+    p_profile_create.add_argument("--weight-kg", type=int)
+    p_profile_create.add_argument("--goal")
+    p_profile_create.add_argument("--gym-days", type=int)
+    p_profile_create.add_argument("--session-length-minutes", type=int)
+    p_profile_create.add_argument("--equipment")
+    p_profile_create.add_argument("--notes")
+    p_profile_create.add_argument("--force", action="store_true")
+    p_profile_create.set_defaults(func=cmd_profile_create)
 
-    p_images = sub.add_parser("fetch-images", help="Resolve/download exercise images into assets + manifest.")
+    p_profile_show = sub.add_parser("profile-show", help="Print a user profile JSON.")
+    p_profile_show.add_argument("--user", default="default")
+    p_profile_show.set_defaults(func=cmd_profile_show)
+
+    p_profile_update = sub.add_parser("profile-update", help="Update profile fields via --set key=value.")
+    p_profile_update.add_argument("--user", default="default")
+    p_profile_update.add_argument("--set", action="append", default=[])
+    p_profile_update.set_defaults(func=cmd_profile_update)
+
+    p_draft = sub.add_parser("generate-draft", help="Generate draft program from profile + goal + days.")
+    p_draft.add_argument("--user", default="default")
+    p_draft.add_argument("--days", type=int, choices=[2, 3, 4, 5], help="Training days per week")
+    p_draft.add_argument(
+        "--goal",
+        choices=["fat_loss", "muscle_gain", "strength", "general_fitness"],
+        help="Program objective",
+    )
+    p_draft.set_defaults(func=cmd_generate_draft)
+
+    p_approve = sub.add_parser("approve-program", help="Copy draft program to final program.")
+    p_approve.add_argument("--user", default="default")
+    p_approve.set_defaults(func=cmd_approve_program)
+
+    p_images = sub.add_parser("fetch-images", help="Resolve exercise images and write assets manifest.")
+    p_images.add_argument("--user", default="default")
+    p_images.add_argument("--stage", choices=["draft", "final"], default="final")
     p_images.set_defaults(func=cmd_fetch_images)
 
-    p_pdf = sub.add_parser("build-pdf", help="Build 3_day_gym_program.pdf from program.json + image manifest.")
+    p_pdf = sub.add_parser("build-pdf", help="Build beautiful PDF using HTML/CSS + WeasyPrint.")
+    p_pdf.add_argument("--user", default="default")
+    p_pdf.add_argument("--stage", choices=["draft", "final"], default="final")
+    p_pdf.add_argument("--out", help="Output PDF path", default=DEFAULT_PDF_NAME)
+    p_pdf.add_argument("--html-out", help="Optional debug HTML output path", default=DEFAULT_HTML_NAME)
     p_pdf.set_defaults(func=cmd_build_pdf)
 
-    p_all = sub.add_parser("all", help="Run full pipeline: create-program -> fetch-images -> build-pdf.")
-    p_all.set_defaults(func=cmd_all)
+    p_all = sub.add_parser("all", help="Quick run: generate-draft -> fetch-images -> build-pdf.")
+    p_all.add_argument("--user", default="default")
+    p_all.add_argument("--days", type=int, choices=[2, 3, 4, 5])
+    p_all.add_argument("--goal", choices=["fat_loss", "muscle_gain", "strength", "general_fitness"])
+    p_all.add_argument("--auto-approve", action="store_true", help="Auto-promote draft to final before export.")
+    p_all.add_argument("--out", help="Output PDF path", default=DEFAULT_PDF_NAME)
+    p_all.add_argument("--html-out", help="Optional debug HTML output path", default=DEFAULT_HTML_NAME)
+    p_all.set_defaults(func=cmd_all, stage="draft")
 
     return parser
 

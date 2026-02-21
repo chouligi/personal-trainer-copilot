@@ -1,0 +1,32 @@
+*.pdf
+*.png
+
+# OS metadata
+.DS_Store
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tool/runtime caches
+.cache/
+
+# Local generated outputs
+*_program.html
+program_report.html
+
+# Local generated planning artifacts
+profiles/*.json
+programs/*.json
+
+# Local generated image metadata/cache
+assets/image_manifest.json
+assets/image_credit_cache.json
+assets/*.jpg
+assets/*_placeholder.png

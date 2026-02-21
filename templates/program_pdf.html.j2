@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Training Program Report</title>
+  <style>{{ css }}</style>
+</head>
+<body>
+  <section class="page">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Personal Trainer Copilot</p>
+        <h1>Program Report</h1>
+        <p class="subtitle">Goal: {{ goal|replace('_', ' ')|title }} | Profile: {{ profile.name }}</p>
+      </div>
+      <div class="meta">
+        <div><strong>User:</strong> {{ generated_for }}</div>
+        <div><strong>Stage:</strong> {{ stage|upper }}</div>
+        <div><strong>Age:</strong> {{ profile.age }}</div>
+        <div><strong>Height/Weight:</strong> {{ profile.height_cm }} cm / {{ profile.weight_kg }} kg</div>
+        <div><strong>Experience:</strong> {{ profile.experience_level }}</div>
+      </div>
+    </header>
+
+    <section class="kpi-grid">
+      <article class="kpi"><span class="kpi-label">Days</span><span class="kpi-value">{{ days|length }}</span></article>
+      <article class="kpi"><span class="kpi-label">Warmup</span><span class="kpi-value">{{ weekly_structure.warmup }}</span></article>
+      <article class="kpi"><span class="kpi-label">Main</span><span class="kpi-value">{{ weekly_structure.main }}</span></article>
+      <article class="kpi"><span class="kpi-label">Finisher</span><span class="kpi-value">{{ weekly_structure.finisher }}</span></article>
+    </section>
+
+    {% for day in days %}
+      <section class="block">
+        <h2>{{ day.title }}</h2>
+        <p class="small"><strong>Warmup:</strong> {{ day.warmup }}</p>
+        <p class="small"><strong>Main:</strong> {{ day.main_work }}</p>
+
+        <table class="program-table">
+          <thead>
+            <tr>
+              <th>Image</th>
+              <th>Exercise</th>
+              <th>Sets x Reps</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in day.rows %}
+              <tr>
+                <td>
+                  {% if row.image_uri %}
+                    <img src="{{ row.image_uri }}" alt="{{ row.name }}" class="exercise-image" />
+                  {% else %}
+                    <div class="image-fallback">N/A</div>
+                  {% endif %}
+                </td>
+                <td>{{ row.name }}</td>
+                <td>{{ row.sets_reps }}</td>
+                <td>{{ row.notes }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="small"><strong>Finisher:</strong> {{ day.finisher }}</p>
+      </section>
+    {% endfor %}
+  </section>
+
+  <section class="page">
+    <section class="two-col">
+      <article class="card">
+        <h3>Superset Rules</h3>
+        <ul>{% for item in superset_rules %}<li>{{ item }}</li>{% endfor %}</ul>
+      </article>
+      <article class="card">
+        <h3>Progression Rules</h3>
+        <ul>{% for item in progression_rules %}<li>{{ item }}</li>{% endfor %}</ul>
+      </article>
+      <article class="card">
+        <h3>Nutrition & Recovery</h3>
+        <ul>{% for item in fat_loss_non_negotiables %}<li>{{ item }}</li>{% endfor %}</ul>
+      </article>
+      <article class="card">
+        <h3>Schedule Example</h3>
+        <ul>{% for item in schedule_example %}<li>{{ item }}</li>{% endfor %}</ul>
+      </article>
+      <article class="card full">
+        <h3>Non-Gym Guidance</h3>
+        <ul>{% for item in non_gym_guidance %}<li>{{ item }}</li>{% endfor %}</ul>
+      </article>
+    </section>
+
+    <section class="block">
+      <h2>Image Credits</h2>
+      <table class="credits-table">
+        <thead>
+          <tr>
+            <th>Exercise</th>
+            <th>Title</th>
+            <th>Author</th>
+            <th>Source</th>
+            <th>License</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in credits %}
+            <tr>
+              <td>{{ row.exercise }}</td>
+              <td>{{ row.title }}</td>
+              <td>{{ row.author }}</td>
+              <td>{{ row.source_url }}</td>
+              <td>{{ row.license }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </section>
+</body>
+</html>

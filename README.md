@@ -1,14 +1,22 @@
-# 3-Day Gym Program Generator (Modular Workflow)
+# Personal Trainer Copilot - Program Generator
 
-This tool is intentionally split into stages so you can review and edit the plan before moving to images and PDF.
+This project now supports a review-first workflow:
+
+1. Create/update a user profile
+2. Generate a draft program based on goal + days
+3. Review/edit the draft JSON
+4. Approve the draft as final
+5. Resolve exercise images + render a polished PDF (HTML/CSS via WeasyPrint)
 
 ## Files
 
-- `generate_program.py` - main CLI entrypoint
-- `requirements.txt` - dependencies
-- `program.json` - generated/editable program spec
-- `assets/image_manifest.json` - image paths + credits metadata
-- `3_day_gym_program.pdf` - final report
+- `generate_program.py` - CLI entrypoint
+- `profiles/<user>.json` - user profiles
+- `programs/<user>_draft.json` - editable draft
+- `programs/<user>_final.json` - approved final program
+- `assets/image_manifest.json` - image metadata and credits
+- `templates/program_pdf.html.j2` - PDF HTML template
+- `templates/program_pdf.css` - PDF styles
 
 ## Setup
 
@@ -18,48 +26,46 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Step-by-step usage
+Note: WeasyPrint may require OS libraries (pango/cairo/gdk-pixbuf/glib/libffi), depending on your machine.
 
-### 1) Create program spec only
+## Workflow
 
-```bash
-python generate_program.py create-program
-```
-
-This creates `program.json`.
-
-Review and edit `program.json` if needed.
-
-### 2) Download/resolve images based on selected exercises
+### 1) Create profile
 
 ```bash
-python generate_program.py fetch-images
+python generate_program.py profile-create --user fosa --name "Fosa" --goal fat_loss --gym-days 4
 ```
 
-This reads `program.json`, downloads reusable images from Wikimedia Commons when possible, falls back to generated placeholders if needed, and writes:
-
-- image files into `assets/`
-- `assets/image_manifest.json` with credits
-
-### 3) Build final PDF
+### 2) Generate draft
 
 ```bash
-python generate_program.py build-pdf
+python generate_program.py generate-draft --user fosa --days 4 --goal fat_loss
 ```
 
-This reads `program.json` + `assets/image_manifest.json` and writes `3_day_gym_program.pdf`.
+Review/edit `programs/fosa_draft.json`.
 
-## One-command pipeline (optional)
+### 3) Approve final
 
 ```bash
-python generate_program.py all
+python generate_program.py approve-program --user fosa
 ```
 
-Runs all three steps in order.
+### 4) Resolve images
 
-## Licensing and safety
+```bash
+python generate_program.py fetch-images --user fosa --stage final
+```
 
-- External images are sourced from Wikimedia Commons only.
-- Script accepts only clearly reusable license markers (CC BY, CC BY-SA, CC0, Public Domain, GFDL markers).
-- If fetching fails, a locally generated placeholder is used.
-- PDF text is normalized to ASCII-safe punctuation to reduce glyph issues.
+### 5) Build PDF
+
+```bash
+python generate_program.py build-pdf --user fosa --stage final --out fosa_program.pdf --html-out fosa_program.html
+```
+
+## Fast path
+
+Run everything in one go (not ideal if you want manual review):
+
+```bash
+python generate_program.py all --user fosa --days 4 --goal fat_loss --auto-approve --out fosa_program.pdf
+```
