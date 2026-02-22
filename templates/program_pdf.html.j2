@@ -19,6 +19,7 @@
         <div><strong>Age:</strong> {{ profile.age }}</div>
         <div><strong>Height/Weight:</strong> {{ profile.height_cm }} cm / {{ profile.weight_kg }} kg</div>
         <div><strong>Experience:</strong> {{ profile.experience_level }}</div>
+        <div><strong>Session Cap:</strong> {{ session_cap_minutes }} min</div>
       </div>
     </header>
 
@@ -34,6 +35,7 @@
         <h2>{{ day.title }}</h2>
         <p class="small"><strong>Warmup:</strong> {{ day.warmup }}</p>
         <p class="small"><strong>Main:</strong> {{ day.main_work }}</p>
+        <p class="small"><strong>Estimated Session Time:</strong> {{ day.estimated_duration_min }} min</p>
 
         <table class="program-table">
           <thead>
@@ -51,7 +53,7 @@
                   {% if row.image_uri %}
                     <img src="{{ row.image_uri }}" alt="{{ row.name }}" class="exercise-image" />
                   {% else %}
-                    <div class="image-fallback">N/A</div>
+                    <div class="image-fallback">No image available</div>
                   {% endif %}
                 </td>
                 <td>{{ row.name }}</td>
@@ -67,7 +69,7 @@
   </section>
 
   <section class="page">
-    <section class="two-col">
+    <section class="stack">
       <article class="card">
         <h3>Superset Rules</h3>
         <ul>{% for item in superset_rules %}<li>{{ item }}</li>{% endfor %}</ul>
@@ -84,7 +86,7 @@
         <h3>Schedule Example</h3>
         <ul>{% for item in schedule_example %}<li>{{ item }}</li>{% endfor %}</ul>
       </article>
-      <article class="card full">
+      <article class="card">
         <h3>Non-Gym Guidance</h3>
         <ul>{% for item in non_gym_guidance %}<li>{{ item }}</li>{% endfor %}</ul>
       </article>

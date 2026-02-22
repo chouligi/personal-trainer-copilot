@@ -11,6 +11,7 @@ Program workflow:
 from __future__ import annotations
 
 import argparse
+import base64
 import io
 import json
 import os
@@ -31,19 +32,28 @@ from PIL import ImageDraw, ImageFont
 PROFILES_DIR = Path("profiles")
 PROGRAMS_DIR = Path("programs")
 ASSETS_DIR = Path("assets")
+IMAGE_LIBRARY_DIR = ASSETS_DIR / "exercise_library"
 IMAGE_MANIFEST = ASSETS_DIR / "image_manifest.json"
+CURATED_CATALOG = ASSETS_DIR / "curated_image_catalog.json"
 DEFAULT_PDF_NAME = "program_report.pdf"
 DEFAULT_HTML_NAME = "program_report.html"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 REQUEST_TIMEOUT = 20
+HTTP_HEADERS = {
+    "User-Agent": "personal-trainer-copilot/1.0 (local workflow; contact: local-dev)",
+}
+OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
 PERMISSIVE_LICENSE_MARKERS = {
     "cc-by",
     "cc-by-sa",
+    "cc by",
+    "cc by sa",
     "cc0",
     "public domain",
     "gfdl",
     "pdm",
+    "creative commons attribution",
 }
 
 
@@ -56,7 +66,7 @@ class CreditEntry:
     source_url: str
     license: str
     image_path: str
-    kind: str  # commons | placeholder
+    kind: str  # curated_library | commons | missing
 
 
 def ascii_clean(value: str) -> str:
@@ -328,6 +338,75 @@ def apply_goal_rules(program: Dict, goal: str) -> None:
         day["finisher"] = finisher
 
 
+def _parse_set_count(sets_reps: str, default: int = 3) -> int:
+    match = re.match(r"^\s*(\d+)\s*x\s*.+$", (sets_reps or "").strip(), flags=re.IGNORECASE)
+    if not match:
+        return default
+    return int(match.group(1))
+
+
+def _replace_set_count(sets_reps: str, new_sets: int) -> str:
+    text = (sets_reps or "").strip()
+    match = re.match(r"^\s*\d+\s*x\s*(.+)$", text, flags=re.IGNORECASE)
+    if not match:
+        return text
+    return f"{new_sets} x {match.group(1)}"
+
+
+def estimate_day_duration_minutes(day: Dict) -> int:
+    # Heuristic model:
+    # warm-up (5) + supersets rounds (~3.5 min/round) + core (1.5 min/set + 1 setup) + transitions/buffer (4).
+    minutes = 5.0
+    for superset in day.get("supersets", []):
+        set_counts = [_parse_set_count(ex.get("sets_reps", "3 x 8-12")) for ex in superset.get("exercises", [])]
+        rounds = max(set_counts) if set_counts else 3
+        minutes += rounds * 3.5
+    core_sets = _parse_set_count(day.get("core", {}).get("sets_reps", "2 x 10-12"), default=2)
+    minutes += (core_sets * 1.5) + 1.0
+    minutes += 4.0
+    return int(round(minutes))
+
+
+def enforce_session_duration_cap(program: Dict) -> None:
+    cap = int(program.get("profile", {}).get("session_length_minutes", 40))
+    if cap <= 0:
+        cap = 40
+
+    for day in program.get("days", {}).values():
+        while estimate_day_duration_minutes(day) > cap:
+            changed = False
+
+            # Trim accessory volume first (second superset), then first superset.
+            for superset in reversed(day.get("supersets", [])):
+                for exercise in superset.get("exercises", []):
+                    current_sets = _parse_set_count(exercise.get("sets_reps", "3 x 8-12"))
+                    if current_sets > 2:
+                        exercise["sets_reps"] = _replace_set_count(exercise["sets_reps"], current_sets - 1)
+                        changed = True
+                        break
+                if changed:
+                    break
+
+            if changed:
+                continue
+
+            core = day.get("core", {})
+            core_sets = _parse_set_count(core.get("sets_reps", "2 x 10-12"), default=2)
+            if core_sets > 1:
+                core["sets_reps"] = _replace_set_count(core["sets_reps"], core_sets - 1)
+                continue
+
+            # If we cannot trim volume further, remove optional finisher from the time budget guidance.
+            if day.get("finisher"):
+                day["finisher"] = f"Skip finisher when session time is capped at {cap} minutes."
+                break
+
+            raise ValueError(f"Could not fit session within {cap} minutes: {day.get('title', 'day')}")
+
+        day["estimated_duration_min"] = estimate_day_duration_minutes(day)
+    program["session_cap_minutes"] = cap
+
+
 def build_program(profile: Dict, days: int, goal: str) -> Dict:
     templates = day_templates()
     selected = templates[:days]
@@ -387,14 +466,17 @@ def build_program(profile: Dict, days: int, goal: str) -> Dict:
     }
 
     apply_goal_rules(program, goal)
+    enforce_session_duration_cap(program)
     validate_program_constraints(program)
     return program
 
 
 def exercise_query_map() -> Dict[str, List[str]]:
     return {
-        "leg_press": ["leg press machine exercise"],
+        "leg_press": ["leg press machine exercise", "leg press gym machine demonstration"],
+        "leg_press_narrow": ["leg press close stance exercise", "leg press feet low and close"],
         "chest_supported_row": ["chest supported dumbbell row exercise", "seated row exercise gym"],
+        "barbell_bench_press": ["barbell bench press exercise"],
         "flat_db_bench_press": ["dumbbell bench press exercise"],
         "romanian_deadlift": ["romanian deadlift exercise"],
         "cable_pallof_press": ["Pallof press cable exercise"],
@@ -407,6 +489,9 @@ def exercise_query_map() -> Dict[str, List[str]]:
         "lat_pulldown": ["lat pulldown exercise machine"],
         "machine_chest_press": ["chest press machine exercise"],
         "cable_pull_through": ["cable pull through exercise"],
+        "cable_triceps_pressdown": ["cable triceps pressdown exercise"],
+        "seated_db_shoulder_press": ["seated dumbbell shoulder press exercise"],
+        "dumbbell_hammer_curl": ["dumbbell hammer curl exercise"],
         "front_plank": ["front plank exercise"],
         "overhead_db_press": ["dumbbell overhead press exercise"],
         "one_arm_cable_row": ["one arm cable row exercise"],
@@ -430,7 +515,44 @@ def extract_license_text(extmetadata: Dict) -> str:
 
 def is_permissive_license(license_text: str) -> bool:
     lower = license_text.lower()
-    return any(marker in lower for marker in PERMISSIVE_LICENSE_MARKERS)
+    normalized = re.sub(r"[^a-z0-9]+", " ", lower).strip()
+    hyphen_normalized = normalized.replace(" ", "-")
+    return any(
+        marker in lower or marker in normalized or marker in hyphen_normalized
+        for marker in PERMISSIVE_LICENSE_MARKERS
+    )
+
+
+def _keyword_tokens(text: str) -> List[str]:
+    stop = {
+        "exercise",
+        "exercises",
+        "workout",
+        "gym",
+        "machine",
+        "with",
+        "and",
+        "for",
+        "the",
+        "from",
+        "using",
+        "stance",
+        "neutral",
+    }
+    parts = re.findall(r"[a-z0-9]+", (text or "").lower())
+    return [p for p in parts if len(p) >= 3 and p not in stop]
+
+
+def _is_relevant_match(query: str, title: str) -> bool:
+    q_tokens = _keyword_tokens(query)
+    t_tokens = set(_keyword_tokens(title))
+    if not q_tokens:
+        return True
+    overlap = sum(1 for token in q_tokens if token in t_tokens)
+    # Require stronger overlap for multi-keyword queries to avoid random matches.
+    if len(q_tokens) >= 3:
+        return overlap >= 2
+    return overlap >= 1
 
 
 def fetch_wikimedia_image(query: str) -> Optional[Dict]:
@@ -438,13 +560,13 @@ def fetch_wikimedia_image(query: str) -> Optional[Dict]:
         "action": "query",
         "format": "json",
         "generator": "search",
-        "gsrsearch": f'filetype:bitmap "{query}"',
+        "gsrsearch": f"filetype:bitmap {query}",
         "gsrnamespace": 6,
-        "gsrlimit": 10,
+        "gsrlimit": 20,
         "prop": "imageinfo",
-        "iiprop": "url|extmetadata",
+        "iiprop": "url|size|extmetadata",
     }
-    response = requests.get(COMMONS_API, params=params, timeout=REQUEST_TIMEOUT)
+    response = requests.get(COMMONS_API, params=params, timeout=REQUEST_TIMEOUT, headers=HTTP_HEADERS)
     response.raise_for_status()
     pages = response.json().get("query", {}).get("pages", {})
     for page in pages.values():
@@ -456,14 +578,152 @@ def fetch_wikimedia_image(query: str) -> Optional[Dict]:
         license_text = extract_license_text(extmetadata)
         if not license_text or not is_permissive_license(license_text):
             continue
+        title = ascii_clean(page.get("title", "").replace("File:", ""))
+        if not _is_relevant_match(query, title):
+            continue
+        width = int(info.get("width", 0) or 0)
+        height = int(info.get("height", 0) or 0)
+        if width < 600 or height < 400:
+            continue
         return {
-            "title": ascii_clean(page.get("title", "").replace("File:", "")),
+            "title": title,
             "author": ascii_clean(extmetadata.get("Artist", {}).get("value", "")).strip() or "Unknown",
             "url": info.get("url", ""),
             "description_url": info.get("descriptionurl", ""),
             "license": license_text,
+            "width": width,
+            "height": height,
         }
     return None
+
+
+def _extract_response_text(payload: Dict) -> str:
+    if isinstance(payload.get("output_text"), str) and payload["output_text"].strip():
+        return payload["output_text"].strip()
+    output = payload.get("output", [])
+    texts: List[str] = []
+    for item in output:
+        for content in item.get("content", []):
+            if content.get("type") in {"output_text", "text"} and content.get("text"):
+                texts.append(str(content["text"]))
+    return "\n".join(texts).strip()
+
+
+def evaluate_image_with_vlm(
+    image_path: Path,
+    exercise_name: str,
+    canonical_key: str,
+    model: str,
+    threshold: int,
+) -> Dict:
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return {
+            "enabled": False,
+            "accepted": True,
+            "score": None,
+            "reason": "OPENAI_API_KEY not set; skipped VLM validation.",
+        }
+
+    mime = "image/jpeg"
+    if image_path.suffix.lower() == ".png":
+        mime = "image/png"
+    b64 = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    image_data_url = f"data:{mime};base64,{b64}"
+
+    prompt = (
+        "You are checking whether an image clearly demonstrates a gym exercise.\n"
+        "Return ONLY strict JSON with keys: accepted (boolean), score (0-100 integer), reason (short string).\n"
+        f"Exercise name: {exercise_name}\n"
+        f"Canonical key: {canonical_key}\n"
+        "Criteria:\n"
+        "- accepted=true only if the exercise in the image matches this exercise and is visually clear.\n"
+        "- Reject if image is unrelated, ambiguous, collage-heavy, meme-like, or poor instructional value.\n"
+        "- score reflects confidence and quality.\n"
+    )
+
+    payload = {
+        "model": model,
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": image_data_url},
+                ],
+            }
+        ],
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    resp = requests.post(OPENAI_RESPONSES_URL, headers=headers, json=payload, timeout=REQUEST_TIMEOUT + 25)
+    resp.raise_for_status()
+    raw = resp.json()
+    text = _extract_response_text(raw)
+    if not text:
+        return {"enabled": True, "accepted": False, "score": 0, "reason": "Empty VLM response."}
+
+    try:
+        parsed = json.loads(text)
+        accepted = bool(parsed.get("accepted", False))
+        score = int(parsed.get("score", 0))
+        reason = ascii_clean(str(parsed.get("reason", "No reason provided.")))
+    except Exception:
+        return {
+            "enabled": True,
+            "accepted": False,
+            "score": 0,
+            "reason": f"Non-JSON VLM response: {ascii_clean(text)[:180]}",
+        }
+
+    if score < threshold:
+        accepted = False
+        reason = f"{reason} (score below threshold {threshold})"
+
+    return {
+        "enabled": True,
+        "accepted": accepted,
+        "score": score,
+        "reason": reason,
+    }
+
+
+def build_search_queries(exercise_name: str, canonical_key: str, query_map: Dict[str, List[str]]) -> List[str]:
+    provided = query_map.get(canonical_key, [])
+    paren_stripped = re.sub(r"\s*\([^)]*\)", "", exercise_name).strip()
+    from_key = canonical_key.replace("_", " ").strip()
+    candidates = [
+        *provided,
+        exercise_name,
+        paren_stripped,
+        from_key,
+        f"{paren_stripped} gym",
+        f"{from_key} workout",
+    ]
+    out: List[str] = []
+    seen = set()
+    for q in candidates:
+        cleaned = " ".join((q or "").split()).strip()
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(cleaned)
+    return out
+
+
+def load_curated_catalog() -> Dict:
+    if CURATED_CATALOG.exists():
+        return read_json(CURATED_CATALOG)
+    return {"items": {}}
+
+
+def save_curated_catalog(catalog: Dict) -> None:
+    write_json(CURATED_CATALOG, catalog)
 
 
 def create_placeholder_image(path: Path, label: str) -> None:
@@ -487,7 +747,7 @@ def create_placeholder_image(path: Path, label: str) -> None:
 
 def download_image(url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    resp = requests.get(url, timeout=REQUEST_TIMEOUT)
+    resp = requests.get(url, timeout=REQUEST_TIMEOUT, headers=HTTP_HEADERS)
     resp.raise_for_status()
     with PILImage.open(io.BytesIO(resp.content)) as img:
         img.convert("RGB").save(destination, format="JPEG", quality=90)
@@ -509,86 +769,88 @@ def collect_unique_exercises(program: Dict) -> List[Dict]:
     return out
 
 
+def find_local_library_image(canonical_key: str) -> Optional[Path]:
+    base = IMAGE_LIBRARY_DIR / slugify(canonical_key)
+    for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+        candidate = base.with_suffix(ext)
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def resolve_images_for_program(program: Dict) -> Dict:
     query_map = exercise_query_map()
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    IMAGE_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+    catalog = load_curated_catalog()
+    catalog_items = catalog.setdefault("items", {})
     records: List[CreditEntry] = []
 
     for exercise in collect_unique_exercises(program):
         key = exercise["canonical_key"]
         exercise_name = exercise["name"]
         jpg_path = ASSETS_DIR / f"{slugify(key)}.jpg"
-        png_placeholder_path = ASSETS_DIR / f"{slugify(key)}_placeholder.png"
-
-        if jpg_path.exists():
+        library_path = IMAGE_LIBRARY_DIR / f"{slugify(key)}.jpg"
+        catalog_hit = catalog_items.get(key, {})
+        catalog_image_path_raw = catalog_hit.get("image_path", "")
+        if catalog_hit and catalog_image_path_raw and Path(catalog_image_path_raw).exists():
+            catalog_image_path = Path(catalog_image_path_raw)
             records.append(
                 CreditEntry(
                     canonical_key=key,
                     exercise=exercise_name,
-                    title=f"Cached image for {exercise_name}",
-                    author="Cached file",
-                    source_url=str(jpg_path),
-                    license="Cached from prior run",
-                    image_path=str(jpg_path),
-                    kind="commons",
+                    title=catalog_hit.get("title", f"Curated image for {exercise_name}"),
+                    author=catalog_hit.get("author", "Curated source"),
+                    source_url=catalog_hit.get("source_url", ""),
+                    license=catalog_hit.get("license", "Unknown"),
+                    image_path=str(catalog_image_path),
+                    kind="curated_library",
                 )
             )
             continue
 
-        if png_placeholder_path.exists():
+        local_img = find_local_library_image(key)
+        if local_img is not None:
             records.append(
                 CreditEntry(
                     canonical_key=key,
                     exercise=exercise_name,
-                    title=f"Generated placeholder - {exercise_name}",
-                    author="Generated locally",
-                    source_url="N/A",
-                    license="Original generated placeholder",
-                    image_path=str(png_placeholder_path),
-                    kind="placeholder",
+                    title=f"Curated library image for {exercise_name}",
+                    author="Local library",
+                    source_url=str(local_img),
+                    license="Curated library cache",
+                    image_path=str(local_img),
+                    kind="curated_library",
                 )
             )
+            catalog_items[key] = {
+                "exercise": exercise_name,
+                "title": f"Curated library image for {exercise_name}",
+                "author": "Local library",
+                "source_url": str(local_img),
+                "license": "Curated library cache",
+                "image_path": str(local_img),
+            }
             continue
 
-        chosen: Optional[CreditEntry] = None
-        for query in query_map.get(key, [exercise_name]):
-            try:
-                candidate = fetch_wikimedia_image(query)
-                if not candidate or not candidate.get("url"):
-                    continue
-                download_image(candidate["url"], jpg_path)
-                chosen = CreditEntry(
-                    canonical_key=key,
-                    exercise=exercise_name,
-                    title=candidate["title"],
-                    author=candidate["author"],
-                    source_url=candidate["description_url"] or candidate["url"],
-                    license=candidate["license"],
-                    image_path=str(jpg_path),
-                    kind="commons",
-                )
-                break
-            except Exception:
-                continue
-
-        if chosen is None:
-            create_placeholder_image(png_placeholder_path, exercise_name)
-            chosen = CreditEntry(
+        records.append(
+            CreditEntry(
                 canonical_key=key,
                 exercise=exercise_name,
-                title=f"Generated placeholder - {exercise_name}",
-                author="Generated locally",
+                title=f"No curated image available for {exercise_name}",
+                author="N/A",
                 source_url="N/A",
-                license="Original generated placeholder",
-                image_path=str(png_placeholder_path),
-                kind="placeholder",
+                license="N/A",
+                image_path="",
+                kind="missing",
             )
-        records.append(chosen)
+        )
 
     manifest = {
         "credits": [asdict(x) for x in records],
     }
     write_json(IMAGE_MANIFEST, manifest)
+    save_curated_catalog(catalog)
     return manifest
 
 
@@ -625,6 +887,12 @@ def validate_program_constraints(program: Dict) -> None:
     if not all(movement_hits.values()):
         missing = [k for k, v in movement_hits.items() if not v]
         raise ValueError(f"Program missing movement patterns: {missing}")
+    cap = int(program.get("session_cap_minutes") or program.get("profile", {}).get("session_length_minutes", 0) or 0)
+    if cap > 0:
+        for day in program.get("days", {}).values():
+            estimate = int(day.get("estimated_duration_min") or estimate_day_duration_minutes(day))
+            if estimate > cap:
+                raise ValueError(f"{day.get('title', 'day')} estimated at {estimate} min, exceeds cap {cap} min.")
 
 
 def load_image_index_from_manifest(manifest: Dict) -> Dict[str, Dict]:
@@ -670,6 +938,7 @@ def build_html_context(program: Dict, manifest: Dict, user: str, stage: str) -> 
                 "warmup": ascii_clean(day["warmup"]),
                 "main_work": ascii_clean(day["main_work"]),
                 "finisher": ascii_clean(day["finisher"]),
+                "estimated_duration_min": int(day.get("estimated_duration_min") or estimate_day_duration_minutes(day)),
                 "rows": rows,
             }
         )
@@ -679,6 +948,7 @@ def build_html_context(program: Dict, manifest: Dict, user: str, stage: str) -> 
         "stage": ascii_clean(stage),
         "profile": ensure_ascii_structure(profile),
         "goal": ascii_clean(program.get("goal", "general_fitness")),
+        "session_cap_minutes": int(program.get("session_cap_minutes") or profile.get("session_length_minutes", 40)),
         "weekly_structure": ensure_ascii_structure(program["weekly_structure"]),
         "days": day_views,
         "superset_rules": [ascii_clean(x) for x in program["superset_rules"]],
@@ -822,7 +1092,10 @@ def cmd_profile_update(args) -> int:
 def cmd_generate_draft(args) -> int:
     p_path = profile_path(args.user)
     if not p_path.exists():
-        raise FileNotFoundError(f"Profile not found: {p_path}. Run profile-create first.")
+        profile = default_profile(args.user)
+        validate_profile(profile)
+        write_json(p_path, profile)
+        print(f"Profile not found. Created default profile: {p_path}")
     profile = read_json(p_path)
     validate_profile(profile)
 
@@ -854,10 +1127,30 @@ def cmd_fetch_images(args) -> int:
         raise FileNotFoundError(f"Program not found: {p_path}")
     program = read_json(p_path)
     validate_program_constraints(program)
+    if args.refresh_program_images:
+        catalog = load_curated_catalog()
+        items = catalog.setdefault("items", {})
+        for exercise in collect_unique_exercises(program):
+            key = exercise["canonical_key"]
+            library_path = IMAGE_LIBRARY_DIR / f"{slugify(key)}.jpg"
+            if library_path.exists():
+                library_path.unlink()
+            if key in items:
+                del items[key]
+        save_curated_catalog(catalog)
+
     manifest = resolve_images_for_program(program)
+    curated_count = sum(1 for x in manifest["credits"] if x["kind"] == "curated_library")
     commons_count = sum(1 for x in manifest["credits"] if x["kind"] == "commons")
-    placeholder_count = sum(1 for x in manifest["credits"] if x["kind"] == "placeholder")
-    print(f"Wrote {IMAGE_MANIFEST} ({commons_count} commons, {placeholder_count} placeholders).")
+    missing = [x for x in manifest["credits"] if x["kind"] == "missing"]
+    print(
+        f"Wrote {IMAGE_MANIFEST} ({curated_count} curated library, "
+        f"{commons_count} direct commons, {len(missing)} missing)."
+    )
+    if missing:
+        print("Missing images:", ", ".join(x["canonical_key"] for x in missing))
+        if not args.allow_missing_images:
+            raise RuntimeError("Missing exercise images detected. Add curated images and rerun fetch-images.")
     return 0
 
 
@@ -871,6 +1164,13 @@ def cmd_build_pdf(args) -> int:
     program = read_json(p_path)
     manifest = read_json(IMAGE_MANIFEST)
     validate_program_constraints(program)
+    missing = [x for x in manifest.get("credits", []) if x.get("kind") == "missing"]
+    if missing and not args.allow_missing_images:
+        missing_keys = ", ".join(x.get("canonical_key", "unknown") for x in missing)
+        raise RuntimeError(
+            f"Cannot build PDF with missing exercise images: {missing_keys}. "
+            "Curate images first or pass --allow-missing-images."
+        )
 
     out_pdf = Path(args.out) if args.out else Path(DEFAULT_PDF_NAME)
     out_html = Path(args.html_out) if args.html_out else None
@@ -939,6 +1239,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_images = sub.add_parser("fetch-images", help="Resolve exercise images and write assets manifest.")
     p_images.add_argument("--user", default="default")
     p_images.add_argument("--stage", choices=["draft", "final"], default="final")
+    p_images.add_argument("--allow-missing-images", action="store_true")
+    p_images.add_argument(
+        "--refresh-program-images",
+        action="store_true",
+        help="Delete cached library images for this program's exercise keys before fetching.",
+    )
     p_images.set_defaults(func=cmd_fetch_images)
 
     p_pdf = sub.add_parser("build-pdf", help="Build beautiful PDF using HTML/CSS + WeasyPrint.")
@@ -946,6 +1252,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_pdf.add_argument("--stage", choices=["draft", "final"], default="final")
     p_pdf.add_argument("--out", help="Output PDF path", default=DEFAULT_PDF_NAME)
     p_pdf.add_argument("--html-out", help="Optional debug HTML output path", default=DEFAULT_HTML_NAME)
+    p_pdf.add_argument("--allow-missing-images", action="store_true")
     p_pdf.set_defaults(func=cmd_build_pdf)
 
     p_all = sub.add_parser("all", help="Quick run: generate-draft -> fetch-images -> build-pdf.")
@@ -955,6 +1262,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_all.add_argument("--auto-approve", action="store_true", help="Auto-promote draft to final before export.")
     p_all.add_argument("--out", help="Output PDF path", default=DEFAULT_PDF_NAME)
     p_all.add_argument("--html-out", help="Optional debug HTML output path", default=DEFAULT_HTML_NAME)
+    p_all.add_argument("--allow-missing-images", action="store_true")
     p_all.set_defaults(func=cmd_all, stage="draft")
 
     return parser
