@@ -1,1108 +1,94 @@
 #!/usr/bin/env python3
-"""
-Program workflow:
-1) profile-create / profile-update
-2) generate-draft -> writes programs/<user>_draft.json
-3) user reviews draft JSON
-4) approve-program -> writes programs/<user>_final.json
-5) fetch-images + build-pdf
-"""
+"""CLI entrypoint for profile/program/image/PDF workflow."""
 
 from __future__ import annotations
 
 import argparse
-import base64
-import io
 import json
-import os
-import platform
-import re
 import shutil
 import sys
-import textwrap
-from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any
 
-import requests
-from PIL import Image as PILImage
-from PIL import ImageDraw, ImageFont
+from src.image_library import collect_unique_exercises, load_curated_catalog, resolve_images_for_program, save_curated_catalog
+from src.pdf_render import build_html_context, render_pdf_html
+from src.profile_service import create_profile, default_profile, load_profile, update_profile, validate_profile
+from src.program_builder import build_program, validate_program_constraints
+from src.program_io import get_paths, read_json, slugify, write_json
 
-
-PROFILES_DIR = Path("profiles")
-PROGRAMS_DIR = Path("programs")
-ASSETS_DIR = Path("assets")
-IMAGE_LIBRARY_DIR = ASSETS_DIR / "exercise_library"
-IMAGE_MANIFEST = ASSETS_DIR / "image_manifest.json"
-CURATED_CATALOG = ASSETS_DIR / "curated_image_catalog.json"
 DEFAULT_PDF_NAME = "program_report.pdf"
 DEFAULT_HTML_NAME = "program_report.html"
-COMMONS_API = "https://commons.wikimedia.org/w/api.php"
-REQUEST_TIMEOUT = 20
-HTTP_HEADERS = {
-    "User-Agent": "personal-trainer-copilot/1.0 (local workflow; contact: local-dev)",
-}
-OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
-
-PERMISSIVE_LICENSE_MARKERS = {
-    "cc-by",
-    "cc-by-sa",
-    "cc by",
-    "cc by sa",
-    "cc0",
-    "public domain",
-    "gfdl",
-    "pdm",
-    "creative commons attribution",
-}
 
 
-@dataclass
-class CreditEntry:
-    canonical_key: str
-    exercise: str
-    title: str
-    author: str
-    source_url: str
-    license: str
-    image_path: str
-    kind: str  # curated_library | commons | missing
-
-
-def ascii_clean(value: str) -> str:
-    replacements = {
-        "\u2018": "'",
-        "\u2019": "'",
-        "\u201c": '"',
-        "\u201d": '"',
-        "\u2013": "-",
-        "\u2014": "-",
-        "\u2026": "...",
-        "\u00a0": " ",
-    }
-    for bad, good in replacements.items():
-        value = value.replace(bad, good)
-    return value.encode("ascii", errors="ignore").decode("ascii")
-
-
-def slugify(value: str) -> str:
-    value = ascii_clean(value).lower()
-    value = re.sub(r"[^a-z0-9]+", "_", value).strip("_")
-    return value or "item"
-
-
-def ensure_ascii_structure(data):
-    if isinstance(data, dict):
-        return {ascii_clean(str(k)): ensure_ascii_structure(v) for k, v in data.items()}
-    if isinstance(data, list):
-        return [ensure_ascii_structure(x) for x in data]
-    if isinstance(data, str):
-        return ascii_clean(data)
-    return data
-
-
-def write_json(path: Path, payload: Dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(ensure_ascii_structure(payload), f, indent=2)
-
-
-def read_json(path: Path) -> Dict:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def program_path(user: str, stage: str) -> Path:
-    return PROGRAMS_DIR / f"{slugify(user)}_{stage}.json"
-
-
-def profile_path(user: str) -> Path:
-    return PROFILES_DIR / f"{slugify(user)}.json"
-
-
-def default_profile(user: str) -> Dict:
-    return {
-        "user_id": slugify(user),
-        "name": user,
-        "sex": "Prefer not to say",
-        "age": 30,
-        "height_cm": 175,
-        "weight_kg": 75,
-        "goal": "general_fitness",
-        "gym_days": 3,
-        "session_length_minutes": 40,
-        "experience_level": "beginner-intermediate",
-        "equipment": "full_gym",
-        "notes": "",
-    }
-
-
-def validate_profile(profile: Dict) -> None:
-    required = [
-        "user_id",
-        "name",
-        "age",
-        "height_cm",
-        "weight_kg",
-        "goal",
-        "gym_days",
-        "session_length_minutes",
-        "equipment",
-    ]
-    missing = [k for k in required if k not in profile]
-    if missing:
-        raise ValueError(f"Profile missing fields: {missing}")
-    gym_days = int(profile["gym_days"])
-    if gym_days < 2 or gym_days > 5:
-        raise ValueError("gym_days must be between 2 and 5")
-
-
-def ex(name: str, note: str, canonical_key: str, alternatives: str = "") -> Dict:
-    return {
-        "name": name,
-        "sets_reps": "3 x 8-12",
-        "note": note,
-        "canonical_key": canonical_key,
-        "alternatives": alternatives,
-    }
-
-
-def day_templates() -> List[Dict]:
-    return [
-        {
-            "key": "A",
-            "title": "Day A - lower + pull focus",
-            "warmup": "5 min easy cardio + one light set on first two lifts",
-            "main_work": "Superset style, short transitions, smooth tempo",
-            "supersets": [
-                {
-                    "label": "Superset 1",
-                    "exercises": [
-                        ex("Leg Press", "Knee-dominant lower", "leg_press", "Hack squat or goblet squat"),
-                        ex(
-                            "Chest-Supported Row",
-                            "Horizontal pull",
-                            "chest_supported_row",
-                            "Seated cable row or machine row",
-                        ),
-                    ],
-                },
-                {
-                    "label": "Superset 2",
-                    "exercises": [
-                        ex(
-                            "Flat Dumbbell Bench Press",
-                            "Horizontal push",
-                            "flat_db_bench_press",
-                            "Machine chest press or push-ups",
-                        ),
-                        ex("Romanian Deadlift", "Hip hinge", "romanian_deadlift", "Back extension"),
-                    ],
-                },
-            ],
-            "core": ex("Cable Pallof Press", "Anti-rotation core", "cable_pallof_press", "Side plank"),
-            "finisher": "Optional 6-8 min intervals: 30 sec hard + 60 sec easy",
-        },
-        {
-            "key": "B",
-            "title": "Day B - upper + glute focus",
-            "warmup": "5 min incline walk + shoulder/hip prep",
-            "main_work": "Superset style, controlled eccentric and full range",
-            "supersets": [
-                {
-                    "label": "Superset 1",
-                    "exercises": [
-                        ex("Goblet Squat", "Knee-dominant lower", "goblet_squat", "Leg press"),
-                        ex("Seated Cable Row", "Horizontal pull", "seated_cable_row", "Machine row"),
-                    ],
-                },
-                {
-                    "label": "Superset 2",
-                    "exercises": [
-                        ex(
-                            "Incline Dumbbell Bench Press",
-                            "Horizontal push",
-                            "incline_db_bench_press",
-                            "Machine incline press",
-                        ),
-                        ex("Dumbbell Hip Thrust", "Glute/hinge", "dumbbell_hip_thrust", "Glute bridge"),
-                    ],
-                },
-            ],
-            "core": ex("Dead Bug", "Simple trunk control core", "dead_bug", "Bird dog"),
-            "finisher": "Optional 8-10 min brisk incline treadmill walk",
-        },
-        {
-            "key": "C",
-            "title": "Day C - balanced full-body",
-            "warmup": "5 min easy cardio + dynamic mobility",
-            "main_work": "Superset style, keep 1-3 reps in reserve",
-            "supersets": [
-                {
-                    "label": "Superset 1",
-                    "exercises": [
-                        ex("Dumbbell Split Squat", "Unilateral knee-dominant", "dumbbell_split_squat", "Reverse lunge"),
-                        ex("Lat Pulldown", "Vertical pull", "lat_pulldown", "Assisted pull-up"),
-                    ],
-                },
-                {
-                    "label": "Superset 2",
-                    "exercises": [
-                        ex("Machine Chest Press", "Horizontal push", "machine_chest_press", "Push-ups"),
-                        ex("Cable Pull-Through", "Hip hinge accessory", "cable_pull_through", "Back extension"),
-                    ],
-                },
-            ],
-            "core": ex("Front Plank", "Bracing core", "front_plank", "RKC plank"),
-            "finisher": "Optional 8 min EMOM: swings/bike calories",
-        },
-        {
-            "key": "D",
-            "title": "Day D - overhead + single-leg",
-            "warmup": "5 min bike + shoulder mobility",
-            "main_work": "Superset style, rest 45-75 sec between rounds",
-            "supersets": [
-                {
-                    "label": "Superset 1",
-                    "exercises": [
-                        ex("Overhead Dumbbell Press", "Vertical push", "overhead_db_press", "Machine shoulder press"),
-                        ex("One-Arm Cable Row", "Horizontal pull", "one_arm_cable_row", "Chest-supported row"),
-                    ],
-                },
-                {
-                    "label": "Superset 2",
-                    "exercises": [
-                        ex("Bulgarian Split Squat", "Unilateral lower", "bulgarian_split_squat", "Walking lunge"),
-                        ex("Hamstring Curl Machine", "Posterior chain accessory", "hamstring_curl_machine", "Swiss ball curl"),
-                    ],
-                },
-            ],
-            "core": ex("Side Plank", "Anti-lateral flexion core", "side_plank", "Pallof press"),
-            "finisher": "Optional 6-8 min rower intervals",
-        },
-        {
-            "key": "E",
-            "title": "Day E - posterior chain + pull",
-            "warmup": "5 min row + light movement prep",
-            "main_work": "Superset style, controlled reps with full lockout",
-            "supersets": [
-                {
-                    "label": "Superset 1",
-                    "exercises": [
-                        ex("Trap Bar Deadlift", "Primary hinge", "trap_bar_deadlift", "Romanian deadlift"),
-                        ex("Incline Push-up", "Upper push accessory", "incline_push_up", "Machine chest press"),
-                    ],
-                },
-                {
-                    "label": "Superset 2",
-                    "exercises": [
-                        ex("Walking Lunge", "Knee-dominant lower", "walking_lunge", "Split squat"),
-                        ex("Assisted Pull-up", "Vertical pull", "assisted_pull_up", "Lat pulldown"),
-                    ],
-                },
-            ],
-            "core": ex("Bird Dog", "Simple spinal stability", "bird_dog", "Dead bug"),
-            "finisher": "Optional 8 min moderate bike",
-        },
-    ]
-
-
-def apply_goal_rules(program: Dict, goal: str) -> None:
-    goal_key = slugify(goal)
-    first_pair = "4 x 4-6"
-    second_pair = "3 x 6-8"
-    core_scheme = "2 x 30-45 sec or 8-12 reps"
-    finisher = "Optional 6-10 min easy conditioning"
-
-    if goal_key == "fat_loss":
-        first_pair = "3 x 8-12"
-        second_pair = "3 x 10-15"
-        core_scheme = "2 x 10-12 reps or 30-45 sec"
-        finisher = "Optional 8-12 min zone-2 or intervals"
-    elif goal_key == "muscle_gain":
-        first_pair = "4 x 6-10"
-        second_pair = "3 x 8-12"
-        core_scheme = "3 x 10-15 reps or 30-60 sec"
-        finisher = "Optional 6-8 min easy cardio"
-    elif goal_key == "general_fitness":
-        first_pair = "3 x 6-10"
-        second_pair = "3 x 8-12"
-        core_scheme = "2 x 10-12 reps or 30-45 sec"
-
-    for day in program["days"].values():
-        for idx, superset in enumerate(day["supersets"]):
-            scheme = first_pair if idx == 0 else second_pair
-            for exercise in superset["exercises"]:
-                exercise["sets_reps"] = scheme
-        day["core"]["sets_reps"] = core_scheme
-        day["finisher"] = finisher
-
-
-def _parse_set_count(sets_reps: str, default: int = 3) -> int:
-    match = re.match(r"^\s*(\d+)\s*x\s*.+$", (sets_reps or "").strip(), flags=re.IGNORECASE)
-    if not match:
-        return default
-    return int(match.group(1))
-
-
-def _replace_set_count(sets_reps: str, new_sets: int) -> str:
-    text = (sets_reps or "").strip()
-    match = re.match(r"^\s*\d+\s*x\s*(.+)$", text, flags=re.IGNORECASE)
-    if not match:
+def _coerce_set_value(raw: str) -> Any:
+    text = raw.strip()
+    if text.isdigit():
+        return int(text)
+    try:
+        val = float(text)
+        return int(val) if val.is_integer() else val
+    except ValueError:
         return text
-    return f"{new_sets} x {match.group(1)}"
-
-
-def estimate_day_duration_minutes(day: Dict) -> int:
-    # Heuristic model:
-    # warm-up (5) + supersets rounds (~3.5 min/round) + core (1.5 min/set + 1 setup) + transitions/buffer (4).
-    minutes = 5.0
-    for superset in day.get("supersets", []):
-        set_counts = [_parse_set_count(ex.get("sets_reps", "3 x 8-12")) for ex in superset.get("exercises", [])]
-        rounds = max(set_counts) if set_counts else 3
-        minutes += rounds * 3.5
-    core_sets = _parse_set_count(day.get("core", {}).get("sets_reps", "2 x 10-12"), default=2)
-    minutes += (core_sets * 1.5) + 1.0
-    minutes += 4.0
-    return int(round(minutes))
-
-
-def enforce_session_duration_cap(program: Dict) -> None:
-    cap = int(program.get("profile", {}).get("session_length_minutes", 40))
-    if cap <= 0:
-        cap = 40
-
-    for day in program.get("days", {}).values():
-        while estimate_day_duration_minutes(day) > cap:
-            changed = False
-
-            # Trim accessory volume first (second superset), then first superset.
-            for superset in reversed(day.get("supersets", [])):
-                for exercise in superset.get("exercises", []):
-                    current_sets = _parse_set_count(exercise.get("sets_reps", "3 x 8-12"))
-                    if current_sets > 2:
-                        exercise["sets_reps"] = _replace_set_count(exercise["sets_reps"], current_sets - 1)
-                        changed = True
-                        break
-                if changed:
-                    break
-
-            if changed:
-                continue
-
-            core = day.get("core", {})
-            core_sets = _parse_set_count(core.get("sets_reps", "2 x 10-12"), default=2)
-            if core_sets > 1:
-                core["sets_reps"] = _replace_set_count(core["sets_reps"], core_sets - 1)
-                continue
-
-            # If we cannot trim volume further, remove optional finisher from the time budget guidance.
-            if day.get("finisher"):
-                day["finisher"] = f"Skip finisher when session time is capped at {cap} minutes."
-                break
-
-            raise ValueError(f"Could not fit session within {cap} minutes: {day.get('title', 'day')}")
-
-        day["estimated_duration_min"] = estimate_day_duration_minutes(day)
-    program["session_cap_minutes"] = cap
-
-
-def build_program(profile: Dict, days: int, goal: str) -> Dict:
-    templates = day_templates()
-    selected = templates[:days]
-
-    program_days = {}
-    for day in selected:
-        program_days[day["key"]] = {
-            "title": day["title"],
-            "warmup": day["warmup"],
-            "main_work": day["main_work"],
-            "supersets": day["supersets"],
-            "core": day["core"],
-            "finisher": day["finisher"],
-        }
-
-    program = {
-        "profile": profile,
-        "goal": goal,
-        "weekly_structure": {
-            "warmup": "5 minutes",
-            "main": "25-35 minutes supersets",
-            "finisher": "5-10 minutes optional",
-        },
-        "days": program_days,
-        "substitution_map": [
-            "Leg press <-> hack squat <-> goblet squat",
-            "DB bench <-> machine chest press <-> push-ups",
-            "Cable row <-> chest-supported row <-> machine row",
-            "RDL/Trap bar <-> hinge machine <-> back extension",
-            "Lat pulldown <-> assisted pull-up",
-            "Pallof press <-> plank variants",
-        ],
-        "superset_rules": [
-            "Pair upper+lower or push+pull when possible.",
-            "Rest 45-75 sec between rounds.",
-            "Keep transitions short and stable.",
-            "Stop sets with 1-3 reps in reserve.",
-        ],
-        "progression_rules": [
-            "Hit the top of the rep range before adding weight.",
-            "Upper body: add 1-2.5 kg total when ready.",
-            "Lower body: add 2.5-5 kg total when ready.",
-            "If stalled 2-3 weeks, deload 1 week and rebuild.",
-        ],
-        "non_gym_guidance": [
-            "Keep daily steps consistent and gradually increase.",
-            "Use low-intensity cardio for recovery, not exhaustion.",
-            "Prioritize hydration and sleep.",
-        ],
-        "fat_loss_non_negotiables": [
-            "Protein target: 1.8-2.2 g/kg/day.",
-            "Sleep: 7-8+ hours.",
-            "Progressive overload with good form.",
-            "Nutrition aligned to goal and adherence.",
-        ],
-        "schedule_example": [f"Day {day_key}: training" for day_key in program_days.keys()],
-    }
-
-    apply_goal_rules(program, goal)
-    enforce_session_duration_cap(program)
-    validate_program_constraints(program)
-    return program
-
-
-def exercise_query_map() -> Dict[str, List[str]]:
-    return {
-        "leg_press": ["leg press machine exercise", "leg press gym machine demonstration"],
-        "leg_press_narrow": ["leg press close stance exercise", "leg press feet low and close"],
-        "chest_supported_row": ["chest supported dumbbell row exercise", "seated row exercise gym"],
-        "barbell_bench_press": ["barbell bench press exercise"],
-        "flat_db_bench_press": ["dumbbell bench press exercise"],
-        "romanian_deadlift": ["romanian deadlift exercise"],
-        "cable_pallof_press": ["Pallof press cable exercise"],
-        "goblet_squat": ["goblet squat exercise dumbbell"],
-        "seated_cable_row": ["seated cable row exercise"],
-        "incline_db_bench_press": ["incline dumbbell bench press exercise"],
-        "dumbbell_hip_thrust": ["dumbbell hip thrust exercise", "glute bridge dumbbell exercise"],
-        "dead_bug": ["dead bug core exercise"],
-        "dumbbell_split_squat": ["dumbbell split squat exercise"],
-        "lat_pulldown": ["lat pulldown exercise machine"],
-        "machine_chest_press": ["chest press machine exercise"],
-        "cable_pull_through": ["cable pull through exercise"],
-        "cable_triceps_pressdown": ["cable triceps pressdown exercise"],
-        "seated_db_shoulder_press": ["seated dumbbell shoulder press exercise"],
-        "dumbbell_hammer_curl": ["dumbbell hammer curl exercise"],
-        "front_plank": ["front plank exercise"],
-        "overhead_db_press": ["dumbbell overhead press exercise"],
-        "one_arm_cable_row": ["one arm cable row exercise"],
-        "bulgarian_split_squat": ["bulgarian split squat exercise"],
-        "hamstring_curl_machine": ["hamstring curl machine exercise"],
-        "side_plank": ["side plank exercise"],
-        "trap_bar_deadlift": ["trap bar deadlift exercise"],
-        "incline_push_up": ["incline push up exercise"],
-        "walking_lunge": ["walking lunge exercise"],
-        "assisted_pull_up": ["assisted pull up machine exercise"],
-        "bird_dog": ["bird dog core exercise"],
-    }
-
-
-def extract_license_text(extmetadata: Dict) -> str:
-    license_short = extmetadata.get("LicenseShortName", {}).get("value", "")
-    license_url = extmetadata.get("LicenseUrl", {}).get("value", "")
-    usage = extmetadata.get("UsageTerms", {}).get("value", "")
-    return ascii_clean(" | ".join([license_short, license_url, usage]).strip(" |"))
-
-
-def is_permissive_license(license_text: str) -> bool:
-    lower = license_text.lower()
-    normalized = re.sub(r"[^a-z0-9]+", " ", lower).strip()
-    hyphen_normalized = normalized.replace(" ", "-")
-    return any(
-        marker in lower or marker in normalized or marker in hyphen_normalized
-        for marker in PERMISSIVE_LICENSE_MARKERS
-    )
-
-
-def _keyword_tokens(text: str) -> List[str]:
-    stop = {
-        "exercise",
-        "exercises",
-        "workout",
-        "gym",
-        "machine",
-        "with",
-        "and",
-        "for",
-        "the",
-        "from",
-        "using",
-        "stance",
-        "neutral",
-    }
-    parts = re.findall(r"[a-z0-9]+", (text or "").lower())
-    return [p for p in parts if len(p) >= 3 and p not in stop]
-
-
-def _is_relevant_match(query: str, title: str) -> bool:
-    q_tokens = _keyword_tokens(query)
-    t_tokens = set(_keyword_tokens(title))
-    if not q_tokens:
-        return True
-    overlap = sum(1 for token in q_tokens if token in t_tokens)
-    # Require stronger overlap for multi-keyword queries to avoid random matches.
-    if len(q_tokens) >= 3:
-        return overlap >= 2
-    return overlap >= 1
-
-
-def fetch_wikimedia_image(query: str) -> Optional[Dict]:
-    params = {
-        "action": "query",
-        "format": "json",
-        "generator": "search",
-        "gsrsearch": f"filetype:bitmap {query}",
-        "gsrnamespace": 6,
-        "gsrlimit": 20,
-        "prop": "imageinfo",
-        "iiprop": "url|size|extmetadata",
-    }
-    response = requests.get(COMMONS_API, params=params, timeout=REQUEST_TIMEOUT, headers=HTTP_HEADERS)
-    response.raise_for_status()
-    pages = response.json().get("query", {}).get("pages", {})
-    for page in pages.values():
-        imageinfo = page.get("imageinfo", [])
-        if not imageinfo:
-            continue
-        info = imageinfo[0]
-        extmetadata = info.get("extmetadata", {})
-        license_text = extract_license_text(extmetadata)
-        if not license_text or not is_permissive_license(license_text):
-            continue
-        title = ascii_clean(page.get("title", "").replace("File:", ""))
-        if not _is_relevant_match(query, title):
-            continue
-        width = int(info.get("width", 0) or 0)
-        height = int(info.get("height", 0) or 0)
-        if width < 600 or height < 400:
-            continue
-        return {
-            "title": title,
-            "author": ascii_clean(extmetadata.get("Artist", {}).get("value", "")).strip() or "Unknown",
-            "url": info.get("url", ""),
-            "description_url": info.get("descriptionurl", ""),
-            "license": license_text,
-            "width": width,
-            "height": height,
-        }
-    return None
-
-
-def _extract_response_text(payload: Dict) -> str:
-    if isinstance(payload.get("output_text"), str) and payload["output_text"].strip():
-        return payload["output_text"].strip()
-    output = payload.get("output", [])
-    texts: List[str] = []
-    for item in output:
-        for content in item.get("content", []):
-            if content.get("type") in {"output_text", "text"} and content.get("text"):
-                texts.append(str(content["text"]))
-    return "\n".join(texts).strip()
-
-
-def evaluate_image_with_vlm(
-    image_path: Path,
-    exercise_name: str,
-    canonical_key: str,
-    model: str,
-    threshold: int,
-) -> Dict:
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        return {
-            "enabled": False,
-            "accepted": True,
-            "score": None,
-            "reason": "OPENAI_API_KEY not set; skipped VLM validation.",
-        }
-
-    mime = "image/jpeg"
-    if image_path.suffix.lower() == ".png":
-        mime = "image/png"
-    b64 = base64.b64encode(image_path.read_bytes()).decode("ascii")
-    image_data_url = f"data:{mime};base64,{b64}"
-
-    prompt = (
-        "You are checking whether an image clearly demonstrates a gym exercise.\n"
-        "Return ONLY strict JSON with keys: accepted (boolean), score (0-100 integer), reason (short string).\n"
-        f"Exercise name: {exercise_name}\n"
-        f"Canonical key: {canonical_key}\n"
-        "Criteria:\n"
-        "- accepted=true only if the exercise in the image matches this exercise and is visually clear.\n"
-        "- Reject if image is unrelated, ambiguous, collage-heavy, meme-like, or poor instructional value.\n"
-        "- score reflects confidence and quality.\n"
-    )
-
-    payload = {
-        "model": model,
-        "input": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": prompt},
-                    {"type": "input_image", "image_url": image_data_url},
-                ],
-            }
-        ],
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    resp = requests.post(OPENAI_RESPONSES_URL, headers=headers, json=payload, timeout=REQUEST_TIMEOUT + 25)
-    resp.raise_for_status()
-    raw = resp.json()
-    text = _extract_response_text(raw)
-    if not text:
-        return {"enabled": True, "accepted": False, "score": 0, "reason": "Empty VLM response."}
-
-    try:
-        parsed = json.loads(text)
-        accepted = bool(parsed.get("accepted", False))
-        score = int(parsed.get("score", 0))
-        reason = ascii_clean(str(parsed.get("reason", "No reason provided.")))
-    except Exception:
-        return {
-            "enabled": True,
-            "accepted": False,
-            "score": 0,
-            "reason": f"Non-JSON VLM response: {ascii_clean(text)[:180]}",
-        }
-
-    if score < threshold:
-        accepted = False
-        reason = f"{reason} (score below threshold {threshold})"
-
-    return {
-        "enabled": True,
-        "accepted": accepted,
-        "score": score,
-        "reason": reason,
-    }
-
-
-def build_search_queries(exercise_name: str, canonical_key: str, query_map: Dict[str, List[str]]) -> List[str]:
-    provided = query_map.get(canonical_key, [])
-    paren_stripped = re.sub(r"\s*\([^)]*\)", "", exercise_name).strip()
-    from_key = canonical_key.replace("_", " ").strip()
-    candidates = [
-        *provided,
-        exercise_name,
-        paren_stripped,
-        from_key,
-        f"{paren_stripped} gym",
-        f"{from_key} workout",
-    ]
-    out: List[str] = []
-    seen = set()
-    for q in candidates:
-        cleaned = " ".join((q or "").split()).strip()
-        if not cleaned:
-            continue
-        key = cleaned.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(cleaned)
-    return out
-
-
-def load_curated_catalog() -> Dict:
-    if CURATED_CATALOG.exists():
-        return read_json(CURATED_CATALOG)
-    return {"items": {}}
-
-
-def save_curated_catalog(catalog: Dict) -> None:
-    write_json(CURATED_CATALOG, catalog)
-
-
-def create_placeholder_image(path: Path, label: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    img = PILImage.new("RGB", (520, 320), color=(249, 250, 252))
-    draw = ImageDraw.Draw(img)
-
-    draw.rounded_rectangle((8, 8, 512, 312), radius=18, outline=(60, 70, 85), width=3, fill=(249, 250, 252))
-    draw.ellipse((225, 40, 295, 110), outline=(45, 55, 70), width=5)
-    draw.line((260, 110, 260, 190), fill=(45, 55, 70), width=6)
-    draw.line((260, 130, 205, 155), fill=(45, 55, 70), width=5)
-    draw.line((260, 130, 315, 155), fill=(45, 55, 70), width=5)
-    draw.line((260, 190, 220, 250), fill=(45, 55, 70), width=5)
-    draw.line((260, 190, 300, 250), fill=(45, 55, 70), width=5)
-    draw.line((120, 255, 400, 255), fill=(120, 130, 145), width=4)
-
-    wrapped = textwrap.fill(ascii_clean(label), width=36)
-    draw.text((28, 270), wrapped, fill=(30, 35, 40), font=ImageFont.load_default())
-    img.save(path, format="PNG")
-
-
-def download_image(url: str, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    resp = requests.get(url, timeout=REQUEST_TIMEOUT, headers=HTTP_HEADERS)
-    resp.raise_for_status()
-    with PILImage.open(io.BytesIO(resp.content)) as img:
-        img.convert("RGB").save(destination, format="JPEG", quality=90)
-
-
-def collect_unique_exercises(program: Dict) -> List[Dict]:
-    out: List[Dict] = []
-    seen = set()
-    for day in program["days"].values():
-        for superset in day["supersets"]:
-            for exercise in superset["exercises"]:
-                if exercise["canonical_key"] not in seen:
-                    seen.add(exercise["canonical_key"])
-                    out.append(exercise)
-        core = day["core"]
-        if core["canonical_key"] not in seen:
-            seen.add(core["canonical_key"])
-            out.append(core)
-    return out
-
-
-def find_local_library_image(canonical_key: str) -> Optional[Path]:
-    base = IMAGE_LIBRARY_DIR / slugify(canonical_key)
-    for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-        candidate = base.with_suffix(ext)
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def resolve_images_for_program(program: Dict) -> Dict:
-    query_map = exercise_query_map()
-    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-    IMAGE_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
-    catalog = load_curated_catalog()
-    catalog_items = catalog.setdefault("items", {})
-    records: List[CreditEntry] = []
-
-    for exercise in collect_unique_exercises(program):
-        key = exercise["canonical_key"]
-        exercise_name = exercise["name"]
-        jpg_path = ASSETS_DIR / f"{slugify(key)}.jpg"
-        library_path = IMAGE_LIBRARY_DIR / f"{slugify(key)}.jpg"
-        catalog_hit = catalog_items.get(key, {})
-        catalog_image_path_raw = catalog_hit.get("image_path", "")
-        if catalog_hit and catalog_image_path_raw and Path(catalog_image_path_raw).exists():
-            catalog_image_path = Path(catalog_image_path_raw)
-            records.append(
-                CreditEntry(
-                    canonical_key=key,
-                    exercise=exercise_name,
-                    title=catalog_hit.get("title", f"Curated image for {exercise_name}"),
-                    author=catalog_hit.get("author", "Curated source"),
-                    source_url=catalog_hit.get("source_url", ""),
-                    license=catalog_hit.get("license", "Unknown"),
-                    image_path=str(catalog_image_path),
-                    kind="curated_library",
-                )
-            )
-            continue
-
-        local_img = find_local_library_image(key)
-        if local_img is not None:
-            records.append(
-                CreditEntry(
-                    canonical_key=key,
-                    exercise=exercise_name,
-                    title=f"Curated library image for {exercise_name}",
-                    author="Local library",
-                    source_url=str(local_img),
-                    license="Curated library cache",
-                    image_path=str(local_img),
-                    kind="curated_library",
-                )
-            )
-            catalog_items[key] = {
-                "exercise": exercise_name,
-                "title": f"Curated library image for {exercise_name}",
-                "author": "Local library",
-                "source_url": str(local_img),
-                "license": "Curated library cache",
-                "image_path": str(local_img),
-            }
-            continue
-
-        records.append(
-            CreditEntry(
-                canonical_key=key,
-                exercise=exercise_name,
-                title=f"No curated image available for {exercise_name}",
-                author="N/A",
-                source_url="N/A",
-                license="N/A",
-                image_path="",
-                kind="missing",
-            )
-        )
-
-    manifest = {
-        "credits": [asdict(x) for x in records],
-    }
-    write_json(IMAGE_MANIFEST, manifest)
-    save_curated_catalog(catalog)
-    return manifest
-
-
-def validate_program_constraints(program: Dict) -> None:
-    per_day_counts = []
-    movement_hits = {
-        "knee_dominant": False,
-        "hinge": False,
-        "horizontal_push": False,
-        "horizontal_pull": False,
-        "vertical": False,
-        "core": False,
-    }
-    for day in program["days"].values():
-        count = sum(len(ss["exercises"]) for ss in day["supersets"]) + 1
-        per_day_counts.append(count)
-        names = " ".join(ex["name"].lower() for ss in day["supersets"] for ex in ss["exercises"]) + " " + day["core"][
-            "name"
-        ].lower()
-        if any(k in names for k in ["leg press", "squat", "split squat", "lunge"]):
-            movement_hits["knee_dominant"] = True
-        if any(k in names for k in ["deadlift", "hip thrust", "pull-through", "back extension", "hamstring curl"]):
-            movement_hits["hinge"] = True
-        if any(k in names for k in ["bench press", "chest press", "push-up", "overhead"]):
-            movement_hits["horizontal_push"] = True
-        if "row" in names:
-            movement_hits["horizontal_pull"] = True
-        if any(k in names for k in ["lat pulldown", "pull-up", "overhead"]):
-            movement_hits["vertical"] = True
-        if any(k in names for k in ["plank", "dead bug", "pallof", "bird dog"]):
-            movement_hits["core"] = True
-    if not all(4 <= n <= 6 for n in per_day_counts):
-        raise ValueError("Each day must have 4-6 exercises including core.")
-    if not all(movement_hits.values()):
-        missing = [k for k, v in movement_hits.items() if not v]
-        raise ValueError(f"Program missing movement patterns: {missing}")
-    cap = int(program.get("session_cap_minutes") or program.get("profile", {}).get("session_length_minutes", 0) or 0)
-    if cap > 0:
-        for day in program.get("days", {}).values():
-            estimate = int(day.get("estimated_duration_min") or estimate_day_duration_minutes(day))
-            if estimate > cap:
-                raise ValueError(f"{day.get('title', 'day')} estimated at {estimate} min, exceeds cap {cap} min.")
-
-
-def load_image_index_from_manifest(manifest: Dict) -> Dict[str, Dict]:
-    return {row["canonical_key"]: row for row in manifest.get("credits", [])}
-
-
-def build_html_context(program: Dict, manifest: Dict, user: str, stage: str) -> Dict:
-    profile = program["profile"]
-    image_index = load_image_index_from_manifest(manifest)
-
-    day_views: List[Dict] = []
-    for day_key, day in program["days"].items():
-        rows = []
-        for superset in day["supersets"]:
-            for exercise in superset["exercises"]:
-                image_path = image_index.get(exercise["canonical_key"], {}).get("image_path")
-                image_uri = Path(image_path).resolve().as_uri() if image_path and Path(image_path).exists() else ""
-                rows.append(
-                    {
-                        "name": ascii_clean(exercise["name"]),
-                        "sets_reps": ascii_clean(exercise["sets_reps"]),
-                        "notes": ascii_clean(f"{exercise['note']}. Alt: {exercise['alternatives']}"),
-                        "image_uri": image_uri,
-                    }
-                )
-
-        core = day["core"]
-        core_path = image_index.get(core["canonical_key"], {}).get("image_path")
-        core_uri = Path(core_path).resolve().as_uri() if core_path and Path(core_path).exists() else ""
-        rows.append(
-            {
-                "name": ascii_clean(core["name"] + " (core)"),
-                "sets_reps": ascii_clean(core["sets_reps"]),
-                "notes": ascii_clean(f"{core['note']}. Alt: {core['alternatives']}"),
-                "image_uri": core_uri,
-            }
-        )
-
-        day_views.append(
-            {
-                "day_key": day_key,
-                "title": ascii_clean(day["title"]),
-                "warmup": ascii_clean(day["warmup"]),
-                "main_work": ascii_clean(day["main_work"]),
-                "finisher": ascii_clean(day["finisher"]),
-                "estimated_duration_min": int(day.get("estimated_duration_min") or estimate_day_duration_minutes(day)),
-                "rows": rows,
-            }
-        )
-
-    return {
-        "generated_for": ascii_clean(user),
-        "stage": ascii_clean(stage),
-        "profile": ensure_ascii_structure(profile),
-        "goal": ascii_clean(program.get("goal", "general_fitness")),
-        "session_cap_minutes": int(program.get("session_cap_minutes") or profile.get("session_length_minutes", 40)),
-        "weekly_structure": ensure_ascii_structure(program["weekly_structure"]),
-        "days": day_views,
-        "superset_rules": [ascii_clean(x) for x in program["superset_rules"]],
-        "progression_rules": [ascii_clean(x) for x in program["progression_rules"]],
-        "fat_loss_non_negotiables": [ascii_clean(x) for x in program["fat_loss_non_negotiables"]],
-        "non_gym_guidance": [ascii_clean(x) for x in program["non_gym_guidance"]],
-        "schedule_example": [ascii_clean(x) for x in program["schedule_example"]],
-        "credits": [
-            {
-                "exercise": ascii_clean(row.get("exercise", "")),
-                "title": ascii_clean(row.get("title", "")),
-                "author": ascii_clean(row.get("author", "")),
-                "source_url": ascii_clean(row.get("source_url", "")),
-                "license": ascii_clean(row.get("license", "")),
-            }
-            for row in manifest.get("credits", [])
-        ],
-    }
-
-
-def render_pdf_html(context: Dict, out_pdf: Path, out_html: Optional[Path]) -> None:
-    from jinja2 import Environment, FileSystemLoader, select_autoescape
-
-    template_dir = Path("templates")
-    template_name = "program_pdf.html.j2"
-    css_name = "program_pdf.css"
-
-    if not template_dir.exists():
-        raise FileNotFoundError("templates/ directory not found")
-    css_path = template_dir / css_name
-    if not css_path.exists():
-        raise FileNotFoundError(f"CSS template not found: {css_path}")
-
-    env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=select_autoescape(("html", "xml")))
-    template = env.get_template(template_name)
-    css = css_path.read_text(encoding="utf-8")
-    html = template.render(css=css, **context)
-
-    if out_html:
-        out_html.parent.mkdir(parents=True, exist_ok=True)
-        out_html.write_text(html, encoding="utf-8")
-
-    cache_dir = Path(".cache")
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    os.environ.setdefault("XDG_CACHE_HOME", str(cache_dir.resolve()))
-
-    if platform.system() == "Darwin":
-        candidates = ["/opt/homebrew/lib", "/usr/local/lib"]
-        existing = [p for p in os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "").split(":") if p]
-        merged = []
-        for path in candidates + existing:
-            if path and path not in merged:
-                merged.append(path)
-        os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(merged)
-
-    try:
-        from weasyprint import HTML
-    except Exception as exc:
-        raise RuntimeError(
-            "WeasyPrint import failed. Install weasyprint and platform libs (pango/cairo/gdk-pixbuf/glib/libffi)."
-        ) from exc
-
-    out_pdf.parent.mkdir(parents=True, exist_ok=True)
-    HTML(string=html, base_url=str(Path.cwd())).write_pdf(str(out_pdf))
 
 
 def cmd_profile_create(args) -> int:
-    path = profile_path(args.user)
-    if path.exists() and not args.force:
-        raise FileExistsError(f"Profile already exists: {path}. Use --force to overwrite.")
-
-    profile = default_profile(args.user)
-    if args.name:
-        profile["name"] = args.name
-    if args.sex:
-        profile["sex"] = args.sex
-    if args.age is not None:
-        profile["age"] = args.age
-    if args.height_cm is not None:
-        profile["height_cm"] = args.height_cm
-    if args.weight_kg is not None:
-        profile["weight_kg"] = args.weight_kg
-    if args.goal:
-        profile["goal"] = slugify(args.goal)
-    if args.gym_days is not None:
-        profile["gym_days"] = args.gym_days
-    if args.session_length_minutes is not None:
-        profile["session_length_minutes"] = args.session_length_minutes
-    if args.equipment:
-        profile["equipment"] = slugify(args.equipment)
-    if args.notes:
-        profile["notes"] = args.notes
-
-    validate_profile(profile)
-    write_json(path, profile)
-    print(f"Created profile: {path}")
+    paths = get_paths()
+    overrides = {
+        "name": args.name,
+        "sex": args.sex,
+        "age": args.age,
+        "height_cm": args.height_cm,
+        "weight_kg": args.weight_kg,
+        "goal": args.goal,
+        "gym_days": args.gym_days,
+        "session_length_minutes": args.session_length_minutes,
+        "equipment": args.equipment,
+        "notes": args.notes,
+    }
+    create_profile(paths, args.user, overrides, force=args.force)
+    print(f"Created profile: {paths.profile_path(args.user)}")
     return 0
 
 
 def cmd_profile_show(args) -> int:
-    path = profile_path(args.user)
-    if not path.exists():
-        raise FileNotFoundError(f"Profile not found: {path}. Run profile-create first.")
-    profile = read_json(path)
+    paths = get_paths()
+    profile = load_profile(paths, args.user)
     print(json.dumps(profile, indent=2))
     return 0
 
 
 def cmd_profile_update(args) -> int:
-    path = profile_path(args.user)
-    if not path.exists():
-        raise FileNotFoundError(f"Profile not found: {path}. Run profile-create first.")
-    profile = read_json(path)
-
+    paths = get_paths()
+    updates: dict[str, Any] = {}
     for item in args.set or []:
         if "=" not in item:
             raise ValueError(f"Invalid --set value '{item}'. Use key=value.")
         key, raw = item.split("=", 1)
         key = key.strip()
-        raw = raw.strip()
         if not key:
             raise ValueError(f"Invalid key in --set value '{item}'.")
+        updates[key] = _coerce_set_value(raw)
 
-        if raw.isdigit():
-            value = int(raw)
-        else:
-            try:
-                value = float(raw)
-                if value.is_integer():
-                    value = int(value)
-            except ValueError:
-                value = raw
-        profile[key] = value
-
-    validate_profile(profile)
-    write_json(path, profile)
-    print(f"Updated profile: {path}")
+    update_profile(paths, args.user, updates)
+    print(f"Updated profile: {paths.profile_path(args.user)}")
     return 0
 
 
 def cmd_generate_draft(args) -> int:
-    p_path = profile_path(args.user)
-    if not p_path.exists():
+    paths = get_paths()
+    profile_file = paths.profile_path(args.user)
+    if not profile_file.exists():
         profile = default_profile(args.user)
         validate_profile(profile)
-        write_json(p_path, profile)
-        print(f"Profile not found. Created default profile: {p_path}")
-    profile = read_json(p_path)
-    validate_profile(profile)
+        write_json(profile_file, profile)
+        print(f"Profile not found. Created default profile: {profile_file}")
 
+    profile = load_profile(paths, args.user)
     days = args.days if args.days is not None else int(profile.get("gym_days", 3))
     goal = args.goal if args.goal else str(profile.get("goal", "general_fitness"))
-    program = build_program(profile, days=days, goal=goal)
-    draft_path = program_path(args.user, "draft")
+
+    program = build_program(paths, profile=profile, days=days, goal=goal)
+    draft_path = paths.program_path(args.user, "draft")
     write_json(draft_path, program)
     print(f"Created draft program: {draft_path}")
     print("Review and edit this file before approval.")
@@ -1110,43 +96,48 @@ def cmd_generate_draft(args) -> int:
 
 
 def cmd_approve_program(args) -> int:
-    draft_path = program_path(args.user, "draft")
-    final_path = program_path(args.user, "final")
+    paths = get_paths()
+    draft_path = paths.program_path(args.user, "draft")
+    final_path = paths.program_path(args.user, "final")
     if not draft_path.exists():
         raise FileNotFoundError(f"Draft program not found: {draft_path}. Run generate-draft first.")
-
     final_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(draft_path, final_path)
     print(f"Approved program: {final_path}")
     return 0
 
 
-def cmd_fetch_images(args) -> int:
-    p_path = program_path(args.user, args.stage)
-    if not p_path.exists():
-        raise FileNotFoundError(f"Program not found: {p_path}")
-    program = read_json(p_path)
-    validate_program_constraints(program)
-    if args.refresh_program_images:
-        catalog = load_curated_catalog()
-        items = catalog.setdefault("items", {})
-        for exercise in collect_unique_exercises(program):
-            key = exercise["canonical_key"]
-            library_path = IMAGE_LIBRARY_DIR / f"{slugify(key)}.jpg"
-            if library_path.exists():
-                library_path.unlink()
-            if key in items:
-                del items[key]
-        save_curated_catalog(catalog)
+def _refresh_program_images(paths, program: dict) -> None:
+    catalog = load_curated_catalog(paths)
+    items = catalog.setdefault("items", {})
+    for exercise in collect_unique_exercises(program):
+        key = exercise["canonical_key"]
+        base = paths.image_library_dir / slugify(key)
+        for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+            p = base.with_suffix(ext)
+            if p.exists():
+                p.unlink()
+        if key in items:
+            del items[key]
+    save_curated_catalog(paths, catalog)
 
-    manifest = resolve_images_for_program(program)
+
+def cmd_fetch_images(args) -> int:
+    paths = get_paths()
+    program_path = paths.program_path(args.user, args.stage)
+    if not program_path.exists():
+        raise FileNotFoundError(f"Program not found: {program_path}")
+
+    program = read_json(program_path)
+    validate_program_constraints(program)
+
+    if args.refresh_program_images:
+        _refresh_program_images(paths, program)
+
+    manifest = resolve_images_for_program(paths, program)
     curated_count = sum(1 for x in manifest["credits"] if x["kind"] == "curated_library")
-    commons_count = sum(1 for x in manifest["credits"] if x["kind"] == "commons")
     missing = [x for x in manifest["credits"] if x["kind"] == "missing"]
-    print(
-        f"Wrote {IMAGE_MANIFEST} ({curated_count} curated library, "
-        f"{commons_count} direct commons, {len(missing)} missing)."
-    )
+    print(f"Wrote {paths.image_manifest} ({curated_count} curated library, {len(missing)} missing).")
     if missing:
         print("Missing images:", ", ".join(x["canonical_key"] for x in missing))
         if not args.allow_missing_images:
@@ -1155,15 +146,17 @@ def cmd_fetch_images(args) -> int:
 
 
 def cmd_build_pdf(args) -> int:
-    p_path = program_path(args.user, args.stage)
-    if not p_path.exists():
-        raise FileNotFoundError(f"Program not found: {p_path}")
-    if not IMAGE_MANIFEST.exists():
-        raise FileNotFoundError(f"{IMAGE_MANIFEST} not found. Run fetch-images first.")
+    paths = get_paths()
+    program_path = paths.program_path(args.user, args.stage)
+    if not program_path.exists():
+        raise FileNotFoundError(f"Program not found: {program_path}")
+    if not paths.image_manifest.exists():
+        raise FileNotFoundError(f"{paths.image_manifest} not found. Run fetch-images first.")
 
-    program = read_json(p_path)
-    manifest = read_json(IMAGE_MANIFEST)
+    program = read_json(program_path)
+    manifest = read_json(paths.image_manifest)
     validate_program_constraints(program)
+
     missing = [x for x in manifest.get("credits", []) if x.get("kind") == "missing"]
     if missing and not args.allow_missing_images:
         missing_keys = ", ".join(x.get("canonical_key", "unknown") for x in missing)
@@ -1174,8 +167,10 @@ def cmd_build_pdf(args) -> int:
 
     out_pdf = Path(args.out) if args.out else Path(DEFAULT_PDF_NAME)
     out_html = Path(args.html_out) if args.html_out else None
+
     context = build_html_context(program, manifest, user=args.user, stage=args.stage)
-    render_pdf_html(context, out_pdf=out_pdf, out_html=out_html)
+    render_pdf_html(paths, context=context, out_pdf=out_pdf, out_html=out_html)
+
     print(f"Created PDF: {out_pdf}")
     if out_html:
         print(f"Wrote HTML preview: {out_html}")
@@ -1225,33 +220,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_draft = sub.add_parser("generate-draft", help="Generate draft program from profile + goal + days.")
     p_draft.add_argument("--user", default="default")
     p_draft.add_argument("--days", type=int, choices=[2, 3, 4, 5], help="Training days per week")
-    p_draft.add_argument(
-        "--goal",
-        choices=["fat_loss", "muscle_gain", "strength", "general_fitness"],
-        help="Program objective",
-    )
+    p_draft.add_argument("--goal", choices=["fat_loss", "muscle_gain", "strength", "general_fitness"])
     p_draft.set_defaults(func=cmd_generate_draft)
 
     p_approve = sub.add_parser("approve-program", help="Copy draft program to final program.")
     p_approve.add_argument("--user", default="default")
     p_approve.set_defaults(func=cmd_approve_program)
 
-    p_images = sub.add_parser("fetch-images", help="Resolve exercise images and write assets manifest.")
+    p_images = sub.add_parser("fetch-images", help="Resolve exercise images from local library only.")
     p_images.add_argument("--user", default="default")
     p_images.add_argument("--stage", choices=["draft", "final"], default="final")
     p_images.add_argument("--allow-missing-images", action="store_true")
     p_images.add_argument(
         "--refresh-program-images",
         action="store_true",
-        help="Delete cached library images for this program's exercise keys before fetching.",
+        help="Delete cached library images for this program's exercise keys before resolving.",
     )
     p_images.set_defaults(func=cmd_fetch_images)
 
-    p_pdf = sub.add_parser("build-pdf", help="Build beautiful PDF using HTML/CSS + WeasyPrint.")
+    p_pdf = sub.add_parser("build-pdf", help="Build polished PDF using HTML/CSS + WeasyPrint.")
     p_pdf.add_argument("--user", default="default")
     p_pdf.add_argument("--stage", choices=["draft", "final"], default="final")
-    p_pdf.add_argument("--out", help="Output PDF path", default=DEFAULT_PDF_NAME)
-    p_pdf.add_argument("--html-out", help="Optional debug HTML output path", default=DEFAULT_HTML_NAME)
+    p_pdf.add_argument("--out", default=DEFAULT_PDF_NAME)
+    p_pdf.add_argument("--html-out", default=DEFAULT_HTML_NAME)
     p_pdf.add_argument("--allow-missing-images", action="store_true")
     p_pdf.set_defaults(func=cmd_build_pdf)
 
@@ -1259,9 +250,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_all.add_argument("--user", default="default")
     p_all.add_argument("--days", type=int, choices=[2, 3, 4, 5])
     p_all.add_argument("--goal", choices=["fat_loss", "muscle_gain", "strength", "general_fitness"])
-    p_all.add_argument("--auto-approve", action="store_true", help="Auto-promote draft to final before export.")
-    p_all.add_argument("--out", help="Output PDF path", default=DEFAULT_PDF_NAME)
-    p_all.add_argument("--html-out", help="Optional debug HTML output path", default=DEFAULT_HTML_NAME)
+    p_all.add_argument("--auto-approve", action="store_true")
+    p_all.add_argument("--out", default=DEFAULT_PDF_NAME)
+    p_all.add_argument("--html-out", default=DEFAULT_HTML_NAME)
     p_all.add_argument("--allow-missing-images", action="store_true")
     p_all.set_defaults(func=cmd_all, stage="draft")
 

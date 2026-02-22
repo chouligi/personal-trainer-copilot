@@ -1,25 +1,30 @@
 @page {
   size: A4;
-  margin: 12mm;
+  margin: 10mm 11mm 11mm;
 }
 
 :root {
-  --ink: #102a43;
-  --muted: #486581;
-  --line: #d9e2ec;
-  --soft: #f7fafc;
-  --hero-a: #153e75;
-  --hero-b: #2a69ac;
+  --ink: #0f2942;
+  --muted: #49617a;
+  --line: #cad5e2;
+  --soft: #f4f7fb;
+  --hero-a: #0b2e56;
+  --hero-b: #1a4f88;
+  --hero-c: #2b6da8;
+  --accent-soft: #deecff;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
   font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   color: var(--ink);
-  font-size: 10pt;
-  line-height: 1.35;
+  font-size: 10.4pt;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
 }
 
 .page {
@@ -33,11 +38,12 @@ body {
 .hero {
   display: grid;
   grid-template-columns: 1.2fr 1fr;
-  gap: 12px;
-  background: linear-gradient(130deg, var(--hero-a), var(--hero-b));
+  gap: 14px;
+  background: linear-gradient(130deg, var(--hero-a) 0%, var(--hero-b) 58%, var(--hero-c) 100%);
   color: #f8fbff;
-  border-radius: 12px;
-  padding: 15px;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 8px 20px rgba(9, 26, 44, 0.24);
 }
 
 .eyebrow {
@@ -49,8 +55,8 @@ body {
 }
 
 h1 {
-  margin: 4px 0;
-  font-size: 24pt;
+  margin: 5px 0;
+  font-size: 25pt;
   line-height: 1.05;
 }
 
@@ -60,11 +66,11 @@ h1 {
 }
 
 .meta {
-  background: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.17);
   border: 1px solid rgba(255, 255, 255, 0.23);
-  border-radius: 10px;
-  padding: 10px;
-  font-size: 9pt;
+  border-radius: 11px;
+  padding: 11px 12px;
+  font-size: 9.2pt;
 }
 
 .meta div + div {
@@ -72,17 +78,17 @@ h1 {
 }
 
 .kpi-grid {
-  margin-top: 12px;
+  margin-top: 13px;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
 
 .kpi {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--soft);
-  padding: 8px;
+  border: 1px solid #b6c7da;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eff5fc 100%);
+  padding: 9px 10px;
 }
 
 .kpi-label {
@@ -95,80 +101,118 @@ h1 {
 
 .kpi-value {
   display: block;
-  margin-top: 3px;
+  margin-top: 4px;
   font-weight: 700;
-  font-size: 9.5pt;
+  font-size: 10pt;
 }
 
 .block {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 h2 {
-  margin: 0 0 4px;
-  font-size: 13pt;
+  margin: 0;
+  font-size: 15pt;
+  line-height: 1.15;
+}
+
+.day-header {
+  background: #eef4fc;
+  border: 1px solid #c8d7e8;
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.day-time {
+  background: var(--accent-soft);
+  color: #15406b;
+  border: 1px solid #b8d4ff;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 8.6pt;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .small {
-  margin: 2px 0;
+  margin: 5px 0 0;
   color: #243b53;
 }
 
-.program-table,
-.credits-table {
+.program-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
   border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .program-table th,
-.program-table td,
-.credits-table th,
-.credits-table td {
+.program-table td {
   border-bottom: 1px solid var(--line);
-  padding: 6px;
   vertical-align: top;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
-.program-table th,
-.credits-table th {
-  background: #102a43;
+.program-table th {
+  background: #0f355a;
   color: white;
   text-align: left;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 7.8pt;
+  letter-spacing: 0.05em;
+  font-size: 8.1pt;
+  padding: 8px 10px;
 }
 
-.program-table tbody tr:nth-child(odd),
-.credits-table tbody tr:nth-child(odd) {
+.program-table td {
+  padding: 9px 10px;
+}
+
+.program-table tbody tr:nth-child(odd) {
   background: #fbfdff;
 }
 
-.program-table tbody tr:nth-child(even),
-.credits-table tbody tr:nth-child(even) {
+.program-table tbody tr:nth-child(even) {
   background: #f4f8fc;
 }
 
+.program-table tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.program-table td:first-child {
+  text-align: center;
+}
+
 .exercise-image {
-  width: 62px;
-  height: 42px;
-  object-fit: cover;
-  border-radius: 6px;
-  border: 1px solid #cbd2d9;
+  width: 168px;
+  height: 108px;
+  object-fit: contain;
+  background: #f0f4f8;
+  border-radius: 8px;
+  border: 1px solid #afbccb;
+  box-shadow: 0 2px 8px rgba(20, 40, 60, 0.14);
 }
 
 .image-fallback {
-  width: 62px;
-  height: 42px;
+  width: 168px;
+  height: 108px;
   display: grid;
   place-items: center;
-  border: 1px dashed #9fb3c8;
-  border-radius: 6px;
+  border: 1px dashed #8ca3bb;
+  border-radius: 8px;
   color: var(--muted);
-  font-size: 8pt;
+  font-size: 8.4pt;
+  background: #f7faff;
+  text-align: center;
+  padding: 6px;
 }
 
 .stack {
@@ -178,17 +222,17 @@ h2 {
 
 .card {
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px;
+  border-radius: 10px;
+  padding: 11px 12px;
   background: var(--soft);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   break-inside: avoid;
   page-break-inside: avoid;
 }
 
 h3 {
-  margin: 0 0 4px;
-  font-size: 11pt;
+  margin: 0 0 5px;
+  font-size: 12pt;
 }
 
 ul {

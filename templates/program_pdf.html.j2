@@ -32,12 +32,20 @@
 
     {% for day in days %}
       <section class="block">
-        <h2>{{ day.title }}</h2>
+        <div class="day-header">
+          <h2>{{ day.title }}</h2>
+          <div class="day-time">Estimated {{ day.estimated_duration_min }} min</div>
+        </div>
         <p class="small"><strong>Warmup:</strong> {{ day.warmup }}</p>
         <p class="small"><strong>Main:</strong> {{ day.main_work }}</p>
-        <p class="small"><strong>Estimated Session Time:</strong> {{ day.estimated_duration_min }} min</p>
 
         <table class="program-table">
+          <colgroup>
+            <col style="width: 28%">
+            <col style="width: 24%">
+            <col style="width: 14%">
+            <col style="width: 34%">
+          </colgroup>
           <thead>
             <tr>
               <th>Image</th>
@@ -90,32 +98,6 @@
         <h3>Non-Gym Guidance</h3>
         <ul>{% for item in non_gym_guidance %}<li>{{ item }}</li>{% endfor %}</ul>
       </article>
-    </section>
-
-    <section class="block">
-      <h2>Image Credits</h2>
-      <table class="credits-table">
-        <thead>
-          <tr>
-            <th>Exercise</th>
-            <th>Title</th>
-            <th>Author</th>
-            <th>Source</th>
-            <th>License</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in credits %}
-            <tr>
-              <td>{{ row.exercise }}</td>
-              <td>{{ row.title }}</td>
-              <td>{{ row.author }}</td>
-              <td>{{ row.source_url }}</td>
-              <td>{{ row.license }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
     </section>
   </section>
 </body>

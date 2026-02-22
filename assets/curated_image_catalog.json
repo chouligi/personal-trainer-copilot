@@ -1,0 +1,84 @@
+{
+  "items": {
+    "leg_press": {
+      "exercise": "Leg Press",
+      "title": "Curated library image for Leg Press",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/leg_press.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/leg_press.png"
+    },
+    "barbell_bench_press": {
+      "exercise": "Barbell Bench Press",
+      "title": "Curated library image for Barbell Bench Press",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/barbell_bench_press.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/barbell_bench_press.png"
+    },
+    "chest_supported_row": {
+      "exercise": "Chest-Supported Row",
+      "title": "Curated library image for Chest-Supported Row",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/chest_supported_row.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/chest_supported_row.png"
+    },
+    "seated_db_shoulder_press": {
+      "exercise": "Seated Dumbbell Shoulder Press",
+      "title": "Curated library image for Seated Dumbbell Shoulder Press",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/seated_db_shoulder_press.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/seated_db_shoulder_press.png"
+    },
+    "cable_pallof_press": {
+      "exercise": "Cable Pallof Press",
+      "title": "Curated library image for Cable Pallof Press",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/cable_pallof_press.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/cable_pallof_press.png"
+    },
+    "romanian_deadlift": {
+      "exercise": "Romanian Deadlift",
+      "title": "Curated library image for Romanian Deadlift",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/romanian_deadlift.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/romanian_deadlift.png"
+    },
+    "incline_db_bench_press": {
+      "exercise": "Incline Dumbbell Bench Press",
+      "title": "Curated library image for Incline Dumbbell Bench Press",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/incline_db_bench_press.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/incline_db_bench_press.png"
+    },
+    "lat_pulldown": {
+      "exercise": "Lat Pulldown",
+      "title": "Curated library image for Lat Pulldown",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/lat_pulldown.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/lat_pulldown.png"
+    },
+    "cable_triceps_pressdown": {
+      "exercise": "Cable Triceps Pressdown",
+      "title": "Curated library image for Cable Triceps Pressdown",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/cable_triceps_pressdown.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/cable_triceps_pressdown.png"
+    },
+    "dead_bug": {
+      "exercise": "Dead Bug",
+      "title": "Curated library image for Dead Bug",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/dead_bug.png",
+      "license": "Curated library cache",
+      "image_path": "assets/exercise_library/dead_bug.png"
+    }
+  }
+}

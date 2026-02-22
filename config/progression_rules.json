@@ -1,0 +1,39 @@
+{
+  "default_goal": "general_fitness",
+  "goal_aliases": {
+    "fat_loss_strength_retention": "fat_loss",
+    "fat_loss_fast": "fat_loss"
+  },
+  "goal_profiles": {
+    "fat_loss": {
+      "first_pair": "3 x 8-12",
+      "second_pair": "3 x 10-15",
+      "core_scheme": "2 x 10-12 reps or 30-45 sec",
+      "finisher": "Optional 8-12 min zone-2 or intervals"
+    },
+    "muscle_gain": {
+      "first_pair": "4 x 6-10",
+      "second_pair": "3 x 8-12",
+      "core_scheme": "3 x 10-15 reps or 30-60 sec",
+      "finisher": "Optional 6-8 min easy cardio"
+    },
+    "strength": {
+      "first_pair": "4 x 4-6",
+      "second_pair": "3 x 6-8",
+      "core_scheme": "2 x 30-45 sec or 8-12 reps",
+      "finisher": "Optional 6-10 min easy conditioning"
+    },
+    "general_fitness": {
+      "first_pair": "3 x 6-10",
+      "second_pair": "3 x 8-12",
+      "core_scheme": "2 x 10-12 reps or 30-45 sec",
+      "finisher": "Optional 6-10 min easy conditioning"
+    }
+  },
+  "progression_rules": [
+    "Hit the top of the rep range before adding weight.",
+    "Upper body: add 1-2.5 kg total when ready.",
+    "Lower body: add 2.5-5 kg total when ready.",
+    "If stalled 2-3 weeks, deload 1 week and rebuild."
+  ]
+}

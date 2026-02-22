@@ -1,0 +1,306 @@
+{
+  "days": [
+    {
+      "key": "A",
+      "title": "Day A - lower + pull focus",
+      "warmup": "5 min easy cardio + one light set on first two lifts",
+      "main_work": "Superset style, short transitions, smooth tempo",
+      "supersets": [
+        {
+          "label": "Superset 1",
+          "exercises": [
+            {
+              "name": "Leg Press",
+              "sets_reps": "3 x 8-12",
+              "note": "Knee-dominant lower",
+              "canonical_key": "leg_press",
+              "alternatives": "Hack squat or goblet squat"
+            },
+            {
+              "name": "Chest-Supported Row",
+              "sets_reps": "3 x 8-12",
+              "note": "Horizontal pull",
+              "canonical_key": "chest_supported_row",
+              "alternatives": "Seated cable row or machine row"
+            }
+          ]
+        },
+        {
+          "label": "Superset 2",
+          "exercises": [
+            {
+              "name": "Flat Dumbbell Bench Press",
+              "sets_reps": "3 x 8-12",
+              "note": "Horizontal push",
+              "canonical_key": "flat_db_bench_press",
+              "alternatives": "Machine chest press or push-ups"
+            },
+            {
+              "name": "Romanian Deadlift",
+              "sets_reps": "3 x 8-12",
+              "note": "Hip hinge",
+              "canonical_key": "romanian_deadlift",
+              "alternatives": "Back extension"
+            }
+          ]
+        }
+      ],
+      "core": {
+        "name": "Cable Pallof Press",
+        "sets_reps": "2 x 10-12 per side",
+        "note": "Anti-rotation core",
+        "canonical_key": "cable_pallof_press",
+        "alternatives": "Side plank"
+      },
+      "finisher": "Optional 6-8 min intervals: 30 sec hard + 60 sec easy"
+    },
+    {
+      "key": "B",
+      "title": "Day B - upper + glute focus",
+      "warmup": "5 min incline walk + shoulder/hip prep",
+      "main_work": "Superset style, controlled eccentric and full range",
+      "supersets": [
+        {
+          "label": "Superset 1",
+          "exercises": [
+            {
+              "name": "Goblet Squat",
+              "sets_reps": "3 x 8-12",
+              "note": "Knee-dominant lower",
+              "canonical_key": "goblet_squat",
+              "alternatives": "Leg press"
+            },
+            {
+              "name": "Seated Cable Row",
+              "sets_reps": "3 x 8-12",
+              "note": "Horizontal pull",
+              "canonical_key": "seated_cable_row",
+              "alternatives": "Machine row"
+            }
+          ]
+        },
+        {
+          "label": "Superset 2",
+          "exercises": [
+            {
+              "name": "Incline Dumbbell Bench Press",
+              "sets_reps": "3 x 8-12",
+              "note": "Horizontal push",
+              "canonical_key": "incline_db_bench_press",
+              "alternatives": "Machine incline press"
+            },
+            {
+              "name": "Dumbbell Hip Thrust",
+              "sets_reps": "3 x 8-12",
+              "note": "Glute/hinge",
+              "canonical_key": "dumbbell_hip_thrust",
+              "alternatives": "Glute bridge"
+            }
+          ]
+        }
+      ],
+      "core": {
+        "name": "Dead Bug",
+        "sets_reps": "2 x 10-12 per side",
+        "note": "Simple trunk control core",
+        "canonical_key": "dead_bug",
+        "alternatives": "Bird dog"
+      },
+      "finisher": "Optional 8-10 min brisk incline treadmill walk"
+    },
+    {
+      "key": "C",
+      "title": "Day C - balanced full-body",
+      "warmup": "5 min easy cardio + dynamic mobility",
+      "main_work": "Superset style, keep 1-3 reps in reserve",
+      "supersets": [
+        {
+          "label": "Superset 1",
+          "exercises": [
+            {
+              "name": "Dumbbell Split Squat",
+              "sets_reps": "3 x 8-12",
+              "note": "Unilateral knee-dominant",
+              "canonical_key": "dumbbell_split_squat",
+              "alternatives": "Reverse lunge"
+            },
+            {
+              "name": "Lat Pulldown",
+              "sets_reps": "3 x 8-12",
+              "note": "Vertical pull",
+              "canonical_key": "lat_pulldown",
+              "alternatives": "Assisted pull-up"
+            }
+          ]
+        },
+        {
+          "label": "Superset 2",
+          "exercises": [
+            {
+              "name": "Machine Chest Press",
+              "sets_reps": "3 x 8-12",
+              "note": "Horizontal push",
+              "canonical_key": "machine_chest_press",
+              "alternatives": "Push-ups"
+            },
+            {
+              "name": "Cable Pull-Through",
+              "sets_reps": "3 x 8-12",
+              "note": "Hip hinge accessory",
+              "canonical_key": "cable_pull_through",
+              "alternatives": "Back extension"
+            }
+          ]
+        }
+      ],
+      "core": {
+        "name": "Front Plank",
+        "sets_reps": "2 x 30-45 sec",
+        "note": "Bracing core",
+        "canonical_key": "front_plank",
+        "alternatives": "RKC plank"
+      },
+      "finisher": "Optional 8 min EMOM: swings/bike calories"
+    },
+    {
+      "key": "D",
+      "title": "Day D - overhead + single-leg",
+      "warmup": "5 min bike + shoulder mobility",
+      "main_work": "Superset style, rest 45-75 sec between rounds",
+      "supersets": [
+        {
+          "label": "Superset 1",
+          "exercises": [
+            {
+              "name": "Overhead Dumbbell Press",
+              "sets_reps": "3 x 8-12",
+              "note": "Vertical push",
+              "canonical_key": "overhead_db_press",
+              "alternatives": "Machine shoulder press"
+            },
+            {
+              "name": "One-Arm Cable Row",
+              "sets_reps": "3 x 8-12",
+              "note": "Horizontal pull",
+              "canonical_key": "one_arm_cable_row",
+              "alternatives": "Chest-supported row"
+            }
+          ]
+        },
+        {
+          "label": "Superset 2",
+          "exercises": [
+            {
+              "name": "Bulgarian Split Squat",
+              "sets_reps": "3 x 8-12",
+              "note": "Unilateral lower",
+              "canonical_key": "bulgarian_split_squat",
+              "alternatives": "Walking lunge"
+            },
+            {
+              "name": "Hamstring Curl Machine",
+              "sets_reps": "3 x 8-12",
+              "note": "Posterior chain accessory",
+              "canonical_key": "hamstring_curl_machine",
+              "alternatives": "Swiss ball curl"
+            }
+          ]
+        }
+      ],
+      "core": {
+        "name": "Side Plank",
+        "sets_reps": "2 x 30-45 sec",
+        "note": "Anti-lateral flexion core",
+        "canonical_key": "side_plank",
+        "alternatives": "Pallof press"
+      },
+      "finisher": "Optional 6-8 min rower intervals"
+    },
+    {
+      "key": "E",
+      "title": "Day E - posterior chain + pull",
+      "warmup": "5 min row + light movement prep",
+      "main_work": "Superset style, controlled reps with full lockout",
+      "supersets": [
+        {
+          "label": "Superset 1",
+          "exercises": [
+            {
+              "name": "Trap Bar Deadlift",
+              "sets_reps": "3 x 8-12",
+              "note": "Primary hinge",
+              "canonical_key": "trap_bar_deadlift",
+              "alternatives": "Romanian deadlift"
+            },
+            {
+              "name": "Incline Push-up",
+              "sets_reps": "3 x 8-12",
+              "note": "Upper push accessory",
+              "canonical_key": "incline_push_up",
+              "alternatives": "Machine chest press"
+            }
+          ]
+        },
+        {
+          "label": "Superset 2",
+          "exercises": [
+            {
+              "name": "Walking Lunge",
+              "sets_reps": "3 x 8-12",
+              "note": "Knee-dominant lower",
+              "canonical_key": "walking_lunge",
+              "alternatives": "Split squat"
+            },
+            {
+              "name": "Assisted Pull-up",
+              "sets_reps": "3 x 8-12",
+              "note": "Vertical pull",
+              "canonical_key": "assisted_pull_up",
+              "alternatives": "Lat pulldown"
+            }
+          ]
+        }
+      ],
+      "core": {
+        "name": "Bird Dog",
+        "sets_reps": "2 x 8-12 per side",
+        "note": "Simple spinal stability",
+        "canonical_key": "bird_dog",
+        "alternatives": "Dead bug"
+      },
+      "finisher": "Optional 8 min moderate bike"
+    }
+  ],
+  "defaults": {
+    "weekly_structure": {
+      "warmup": "5 minutes",
+      "main": "25-35 minutes supersets",
+      "finisher": "5-10 minutes optional"
+    },
+    "substitution_map": [
+      "Leg press <-> hack squat <-> goblet squat",
+      "DB bench <-> machine chest press <-> push-ups",
+      "Cable row <-> chest-supported row <-> machine row",
+      "RDL/Trap bar <-> hinge machine <-> back extension",
+      "Lat pulldown <-> assisted pull-up",
+      "Pallof press <-> plank variants"
+    ],
+    "superset_rules": [
+      "Pair upper+lower or push+pull when possible.",
+      "Rest 45-75 sec between rounds.",
+      "Keep transitions short and stable.",
+      "Stop sets with 1-3 reps in reserve."
+    ],
+    "non_gym_guidance": [
+      "Keep daily steps consistent and gradually increase.",
+      "Use low-intensity cardio for recovery, not exhaustion.",
+      "Prioritize hydration and sleep."
+    ],
+    "fat_loss_non_negotiables": [
+      "Protein target: 1.8-2.2 g/kg/day.",
+      "Sleep: 7-8+ hours.",
+      "Progressive overload with good form.",
+      "Nutrition aligned to goal and adherence."
+    ]
+  }
+}
