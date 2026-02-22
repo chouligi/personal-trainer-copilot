@@ -14,21 +14,43 @@ def load_image_index_from_manifest(manifest: dict) -> dict[str, dict]:
     return {row["canonical_key"]: row for row in manifest.get("credits", [])}
 
 
-def build_html_context(program: dict, manifest: dict, user: str, stage: str) -> dict:
+def _split_sets_reps(sets_reps: str) -> tuple[str, str]:
+    text = (sets_reps or "").strip()
+    if "x" not in text:
+        return text, ""
+    parts = [p.strip() for p in text.replace("X", "x").split("x", 1)]
+    if len(parts) != 2:
+        return text, ""
+    return parts[0], parts[1]
+
+
+def build_html_context(program: dict, manifest: dict, user: str) -> dict:
     profile = program["profile"]
     image_index = load_image_index_from_manifest(manifest)
 
     day_views: list[dict] = []
     for day_key, day in program["days"].items():
         rows: list[dict] = []
-        for superset in day["supersets"]:
-            for exercise in superset["exercises"]:
+        for superset_idx, superset in enumerate(day["supersets"], start=1):
+            rows.append(
+                {
+                    "kind": "superset_header",
+                    "label": f"Superset {superset_idx}",
+                    "instruction": "Alternate Exercise 1 and Exercise 2 each round.",
+                }
+            )
+            for exercise_idx, exercise in enumerate(superset["exercises"], start=1):
                 image_path = image_index.get(exercise["canonical_key"], {}).get("image_path")
                 image_uri = Path(image_path).resolve().as_uri() if image_path and Path(image_path).exists() else ""
+                sets, reps = _split_sets_reps(exercise["sets_reps"])
                 rows.append(
                     {
+                        "kind": "exercise",
+                        "pair_code": f"S{superset_idx}.{exercise_idx}",
                         "name": ascii_clean(exercise["name"]),
                         "sets_reps": ascii_clean(exercise["sets_reps"]),
+                        "sets": ascii_clean(sets),
+                        "reps": ascii_clean(reps),
                         "notes": ascii_clean(f"{exercise['note']}. Alt: {exercise['alternatives']}"),
                         "image_uri": image_uri,
                     }
@@ -37,10 +59,15 @@ def build_html_context(program: dict, manifest: dict, user: str, stage: str) -> 
         core = day["core"]
         core_path = image_index.get(core["canonical_key"], {}).get("image_path")
         core_uri = Path(core_path).resolve().as_uri() if core_path and Path(core_path).exists() else ""
+        core_sets, core_reps = _split_sets_reps(core["sets_reps"])
         rows.append(
             {
+                "kind": "exercise",
+                "pair_code": "Core",
                 "name": ascii_clean(core["name"] + " (core)"),
                 "sets_reps": ascii_clean(core["sets_reps"]),
+                "sets": ascii_clean(core_sets),
+                "reps": ascii_clean(core_reps),
                 "notes": ascii_clean(f"{core['note']}. Alt: {core['alternatives']}"),
                 "image_uri": core_uri,
             }
@@ -60,7 +87,6 @@ def build_html_context(program: dict, manifest: dict, user: str, stage: str) -> 
 
     return {
         "generated_for": ascii_clean(user),
-        "stage": ascii_clean(stage),
         "profile": profile,
         "goal": ascii_clean(program.get("goal", "general_fitness")),
         "session_cap_minutes": int(program.get("session_cap_minutes") or profile.get("session_length_minutes", 40)),

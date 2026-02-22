@@ -168,7 +168,7 @@ def cmd_build_pdf(args) -> int:
     out_pdf = Path(args.out) if args.out else Path(DEFAULT_PDF_NAME)
     out_html = Path(args.html_out) if args.html_out else None
 
-    context = build_html_context(program, manifest, user=args.user, stage=args.stage)
+    context = build_html_context(program, manifest, user=args.user)
     render_pdf_html(paths, context=context, out_pdf=out_pdf, out_html=out_html)
 
     print(f"Created PDF: {out_pdf}")

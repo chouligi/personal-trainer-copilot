@@ -15,7 +15,6 @@
       </div>
       <div class="meta">
         <div><strong>User:</strong> {{ generated_for }}</div>
-        <div><strong>Stage:</strong> {{ stage|upper }}</div>
         <div><strong>Age:</strong> {{ profile.age }}</div>
         <div><strong>Height/Weight:</strong> {{ profile.height_cm }} cm / {{ profile.weight_kg }} kg</div>
         <div><strong>Experience:</strong> {{ profile.experience_level }}</div>
@@ -41,10 +40,10 @@
 
         <table class="program-table">
           <colgroup>
-            <col style="width: 28%">
-            <col style="width: 24%">
-            <col style="width: 14%">
-            <col style="width: 34%">
+            <col style="width: 36%">
+            <col style="width: 22%">
+            <col style="width: 16%">
+            <col style="width: 26%">
           </colgroup>
           <thead>
             <tr>
@@ -56,6 +55,14 @@
           </thead>
           <tbody>
             {% for row in day.rows %}
+              {% if row.kind == "superset_header" %}
+              <tr class="superset-row">
+                <td colspan="4">
+                  <span class="superset-pill">{{ row.label }}</span>
+                  <span class="superset-note">{{ row.instruction }}</span>
+                </td>
+              </tr>
+              {% else %}
               <tr>
                 <td>
                   {% if row.image_uri %}
@@ -64,10 +71,19 @@
                     <div class="image-fallback">No image available</div>
                   {% endif %}
                 </td>
-                <td>{{ row.name }}</td>
-                <td>{{ row.sets_reps }}</td>
+                <td class="exercise-name">
+                  <span class="pair-badge">{{ row.pair_code }}</span>
+                  {{ row.name }}
+                </td>
+                <td>
+                  <div class="sets-box">
+                    <div><strong>Sets:</strong> {{ row.sets }}</div>
+                    <div><strong>Reps:</strong> {{ row.reps }}</div>
+                  </div>
+                </td>
                 <td>{{ row.notes }}</td>
               </tr>
+              {% endif %}
             {% endfor %}
           </tbody>
         </table>

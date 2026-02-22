@@ -33,6 +33,9 @@ def test_context_handles_missing_images():
     }
     manifest = {"credits": [{"canonical_key": "leg_press", "image_path": "", "kind": "missing"}]}
 
-    ctx = build_html_context(program, manifest, user="fosa", stage="final")
-    assert ctx["days"][0]["rows"][0]["image_uri"] == ""
+    ctx = build_html_context(program, manifest, user="fosa")
+    exercise_rows = [row for row in ctx["days"][0]["rows"] if row.get("kind") == "exercise"]
+    assert exercise_rows[0]["image_uri"] == ""
+    assert exercise_rows[0]["sets"] == "3"
+    assert exercise_rows[0]["reps"] == "8"
     assert "credits" not in ctx
