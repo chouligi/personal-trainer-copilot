@@ -2,116 +2,149 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Training Program Report</title>
+  <title>Coaching Program</title>
   <style>{{ css }}</style>
 </head>
 <body>
   <section class="page">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">Personal Trainer Copilot</p>
-        <h1>Program Report</h1>
-        <p class="subtitle">Goal: {{ goal|replace('_', ' ')|title }} | Profile: {{ profile.name }}</p>
+    <header class="cover">
+      <div class="cover-top">
+        <p class="brand">Performance Coaching Plan</p>
+        <h1>{{ profile.name }} Training Blueprint</h1>
+        <p class="cover-subtitle">{{ goal|replace('_', ' ')|title }} | Session cap {{ session_cap_minutes }} min | {{ days|length }} training days</p>
       </div>
-      <div class="meta">
-        <div><strong>User:</strong> {{ generated_for }}</div>
-        <div><strong>Age:</strong> {{ profile.age }}</div>
-        <div><strong>Height/Weight:</strong> {{ profile.height_cm }} cm / {{ profile.weight_kg }} kg</div>
-        <div><strong>Experience:</strong> {{ profile.experience_level }}</div>
-        <div><strong>Session Cap:</strong> {{ session_cap_minutes }} min</div>
+      <div class="athlete-panel">
+        <h2>Athlete Snapshot</h2>
+        <div class="athlete-grid">
+          <div><span class="label">User</span><strong>{{ generated_for }}</strong></div>
+          <div><span class="label">Age</span><strong>{{ profile.age }}</strong></div>
+          <div><span class="label">Height</span><strong>{{ profile.height_cm }} cm</strong></div>
+          <div><span class="label">Weight</span><strong>{{ profile.weight_kg }} kg</strong></div>
+          <div><span class="label">Level</span><strong>{{ profile.experience_level }}</strong></div>
+          <div><span class="label">Cap</span><strong>{{ session_cap_minutes }} min</strong></div>
+        </div>
       </div>
     </header>
 
-    <section class="kpi-grid">
-      <article class="kpi"><span class="kpi-label">Days</span><span class="kpi-value">{{ days|length }}</span></article>
-      <article class="kpi"><span class="kpi-label">Warmup</span><span class="kpi-value">{{ weekly_structure.warmup }}</span></article>
-      <article class="kpi"><span class="kpi-label">Main</span><span class="kpi-value">{{ weekly_structure.main }}</span></article>
-      <article class="kpi"><span class="kpi-label">Finisher</span><span class="kpi-value">{{ weekly_structure.finisher }}</span></article>
+    <section class="structure-strip">
+      <article class="metric">
+        <span class="metric-label">Weekly Split</span>
+        <span class="metric-value">{{ days|length }} days</span>
+      </article>
+      <article class="metric">
+        <span class="metric-label">Warmup</span>
+        <span class="metric-value">{{ weekly_structure.warmup }}</span>
+      </article>
+      <article class="metric">
+        <span class="metric-label">Main Block</span>
+        <span class="metric-value">{{ weekly_structure.main }}</span>
+      </article>
+      <article class="metric">
+        <span class="metric-label">Finisher</span>
+        <span class="metric-value">{{ weekly_structure.finisher }}</span>
+      </article>
     </section>
 
     {% for day in days %}
-      <section class="block">
-        <div class="day-header">
-          <h2>{{ day.title }}</h2>
-          <div class="day-time">Estimated {{ day.estimated_duration_min }} min</div>
-        </div>
-        <p class="small"><strong>Warmup:</strong> {{ day.warmup }}</p>
-        <p class="small"><strong>Main:</strong> {{ day.main_work }}</p>
+      <section class="day-sheet">
+        <header class="day-title-row">
+          <h3>{{ day.title }}</h3>
+          <span class="duration-chip">{{ day.estimated_duration_min }} min target</span>
+        </header>
 
-        <table class="program-table">
-          <colgroup>
-            <col style="width: 36%">
-            <col style="width: 22%">
-            <col style="width: 16%">
-            <col style="width: 26%">
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Image</th>
-              <th>Exercise</th>
-              <th>Sets x Reps</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in day.rows %}
-              {% if row.kind == "superset_header" %}
-              <tr class="superset-row">
-                <td colspan="4">
-                  <span class="superset-pill">{{ row.label }}</span>
-                  <span class="superset-note">{{ row.instruction }}</span>
-                </td>
-              </tr>
-              {% else %}
-              <tr>
-                <td>
-                  {% if row.image_uri %}
-                    <img src="{{ row.image_uri }}" alt="{{ row.name }}" class="exercise-image" />
-                  {% else %}
-                    <div class="image-fallback">No image available</div>
-                  {% endif %}
-                </td>
-                <td class="exercise-name">
-                  <span class="pair-badge">{{ row.pair_code }}</span>
-                  {{ row.name }}
-                </td>
-                <td>
-                  <div class="sets-box">
-                    <div><strong>Sets:</strong> {{ row.sets }}</div>
-                    <div><strong>Reps:</strong> {{ row.reps }}</div>
+        <section class="session-flow">
+          <p><strong>Warmup:</strong> {{ day.warmup }}</p>
+          <p><strong>Main:</strong> {{ day.main_work }}</p>
+          <p><strong>Finisher:</strong> {{ day.finisher }}</p>
+        </section>
+
+        {% for superset in day.superset_blocks %}
+          <section class="superset-block">
+            <div class="superset-header">
+              <span class="superset-tag">{{ superset.label }}</span>
+              <span class="superset-rule">{{ superset.instruction }}</span>
+            </div>
+            <div class="exercise-grid">
+              {% for exercise in superset.exercises %}
+                <article class="exercise-card">
+                  <div class="media-frame">
+                    {% if exercise.image_uri %}
+                      <img src="{{ exercise.image_uri }}" alt="{{ exercise.name }}" class="exercise-image" />
+                    {% else %}
+                      <div class="image-fallback">No image available</div>
+                    {% endif %}
                   </div>
-                </td>
-                <td>{{ row.notes }}</td>
-              </tr>
+                  <div class="exercise-content">
+                    <div class="exercise-head">
+                      <span class="pair-chip">{{ exercise.pair_label }}</span>
+                      <h4>{{ exercise.name }}</h4>
+                    </div>
+                    <div class="rep-row">
+                      <span class="rep-chip">Sets {{ exercise.sets }}</span>
+                      <span class="rep-chip">Reps {{ exercise.reps }}</span>
+                    </div>
+                    <p class="exercise-notes">{{ exercise.notes }}</p>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          </section>
+        {% endfor %}
+
+        <section class="core-block">
+          <div class="core-header">
+            <span class="core-label">Core</span>
+            <span class="core-rule">Perform after supersets. Controlled tempo and full range.</span>
+          </div>
+          <article class="exercise-card core-card">
+            <div class="media-frame">
+              {% if day.core.image_uri %}
+                <img src="{{ day.core.image_uri }}" alt="{{ day.core.name }}" class="exercise-image" />
+              {% else %}
+                <div class="image-fallback">No image available</div>
               {% endif %}
-            {% endfor %}
-          </tbody>
-        </table>
-        <p class="small"><strong>Finisher:</strong> {{ day.finisher }}</p>
+            </div>
+            <div class="exercise-content">
+              <div class="exercise-head">
+                <span class="pair-chip">{{ day.core.pair_label }}</span>
+                <h4>{{ day.core.name }}</h4>
+              </div>
+              <div class="rep-row">
+                <span class="rep-chip">Sets {{ day.core.sets }}</span>
+                <span class="rep-chip">Reps {{ day.core.reps }}</span>
+              </div>
+              <p class="exercise-notes">{{ day.core.notes }}</p>
+            </div>
+          </article>
+        </section>
       </section>
     {% endfor %}
   </section>
 
-  <section class="page">
-    <section class="stack">
-      <article class="card">
-        <h3>Superset Rules</h3>
+  <section class="guidance-section">
+    <header class="guidance-header">
+      <h3>Execution Guide</h3>
+      <p>Run each session with precise timing and clean technique before adding load.</p>
+    </header>
+    <section class="guidance-grid">
+      <article class="guide-card">
+        <h4>Superset Rules</h4>
         <ul>{% for item in superset_rules %}<li>{{ item }}</li>{% endfor %}</ul>
       </article>
-      <article class="card">
-        <h3>Progression Rules</h3>
+      <article class="guide-card">
+        <h4>Progression Rules</h4>
         <ul>{% for item in progression_rules %}<li>{{ item }}</li>{% endfor %}</ul>
       </article>
-      <article class="card">
-        <h3>Nutrition & Recovery</h3>
+      <article class="guide-card">
+        <h4>Nutrition And Recovery</h4>
         <ul>{% for item in fat_loss_non_negotiables %}<li>{{ item }}</li>{% endfor %}</ul>
       </article>
-      <article class="card">
-        <h3>Schedule Example</h3>
+      <article class="guide-card">
+        <h4>Schedule Example</h4>
         <ul>{% for item in schedule_example %}<li>{{ item }}</li>{% endfor %}</ul>
       </article>
-      <article class="card">
-        <h3>Non-Gym Guidance</h3>
+      <article class="guide-card">
+        <h4>Non-Gym Guidance</h4>
         <ul>{% for item in non_gym_guidance %}<li>{{ item }}</li>{% endfor %}</ul>
       </article>
     </section>

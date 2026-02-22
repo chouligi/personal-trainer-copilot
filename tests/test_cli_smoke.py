@@ -17,3 +17,11 @@ def test_cli_has_expected_commands():
         'all',
     }
     assert expected.issubset(commands)
+
+
+def test_build_pdf_style_flag_is_supported():
+    parser = build_parser()
+    args = parser.parse_args(["build-pdf"])
+    assert args.style == "modern"
+    args = parser.parse_args(["build-pdf", "--style", "future_theme"])
+    assert args.style == "future_theme"

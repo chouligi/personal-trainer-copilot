@@ -169,7 +169,7 @@ def cmd_build_pdf(args) -> int:
     out_html = Path(args.html_out) if args.html_out else None
 
     context = build_html_context(program, manifest, user=args.user)
-    render_pdf_html(paths, context=context, out_pdf=out_pdf, out_html=out_html)
+    render_pdf_html(paths, context=context, out_pdf=out_pdf, out_html=out_html, style=args.style)
 
     print(f"Created PDF: {out_pdf}")
     if out_html:
@@ -243,6 +243,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_pdf.add_argument("--stage", choices=["draft", "final"], default="final")
     p_pdf.add_argument("--out", default=DEFAULT_PDF_NAME)
     p_pdf.add_argument("--html-out", default=DEFAULT_HTML_NAME)
+    p_pdf.add_argument(
+        "--style",
+        default="modern",
+        help="PDF style key. Currently available: modern",
+    )
     p_pdf.add_argument("--allow-missing-images", action="store_true")
     p_pdf.set_defaults(func=cmd_build_pdf)
 
@@ -253,6 +258,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_all.add_argument("--auto-approve", action="store_true")
     p_all.add_argument("--out", default=DEFAULT_PDF_NAME)
     p_all.add_argument("--html-out", default=DEFAULT_HTML_NAME)
+    p_all.add_argument(
+        "--style",
+        default="modern",
+        help="PDF style key. Currently available: modern",
+    )
     p_all.add_argument("--allow-missing-images", action="store_true")
     p_all.set_defaults(func=cmd_all, stage="draft")
 
