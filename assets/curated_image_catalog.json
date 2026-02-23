@@ -79,6 +79,46 @@
       "source_url": "assets/exercise_library/dead_bug.png",
       "license": "Curated library cache",
       "image_path": "assets/exercise_library/dead_bug.png"
+    },
+    "leg_press_narrow": {
+      "exercise": "Leg Press (narrow stance)",
+      "title": "Curated library image for Leg Press (narrow stance)",
+      "author": "Local library",
+      "source_url": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/leg_press_narrow.png",
+      "license": "Self-generated",
+      "image_path": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/leg_press_narrow.png"
+    },
+    "machine_chest_press": {
+      "exercise": "Machine Chest Press (neutral grip)",
+      "title": "Curated library image for Machine Chest Press (neutral grip)",
+      "author": "Local library",
+      "source_url": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/machine_chest_press.png",
+      "license": "Self-generated",
+      "image_path": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/machine_chest_press.png"
+    },
+    "seated_cable_row": {
+      "exercise": "Seated Cable Row",
+      "title": "Curated library image for Seated Cable Row",
+      "author": "Local library",
+      "source_url": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/seated_cable_row.png",
+      "license": "Self-generated",
+      "image_path": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/seated_cable_row.png"
+    },
+    "dumbbell_hammer_curl": {
+      "exercise": "Dumbbell Hammer Curl",
+      "title": "Curated library image for Dumbbell Hammer Curl",
+      "author": "Local library",
+      "source_url": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/dumbbell_hammer_curl.png",
+      "license": "Self-generated",
+      "image_path": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/dumbbell_hammer_curl.png"
+    },
+    "front_plank": {
+      "exercise": "Front Plank",
+      "title": "Curated library image for Front Plank",
+      "author": "Local library",
+      "source_url": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/front_plank.png",
+      "license": "Self-generated",
+      "image_path": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/front_plank.png"
     }
   }
 }
