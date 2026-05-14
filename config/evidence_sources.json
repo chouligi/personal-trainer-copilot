@@ -1,0 +1,97 @@
+{
+  "sources": {
+    "acsm_2026_resistance_training": {
+      "title": "Resistance Training Prescription for Muscle Function, Hypertrophy, and Physical Performance in Healthy Adults: An Overview of Reviews",
+      "organization": "American College of Sports Medicine",
+      "year": 2026,
+      "url": "https://acsm.org/education-resources/pronouncements-scientific-communications/position-stands/",
+      "role": "primary_resistance_training_guideline",
+      "use_for": [
+        "resistance training participation",
+        "exercise prescription principles",
+        "progression and individualization"
+      ],
+      "do_not_use_for": [
+        "medical diagnosis",
+        "rehabilitation protocols for injuries",
+        "disease-specific exercise prescription without clinician review"
+      ],
+      "last_verified": "2026-05-10"
+    },
+    "who_2020_physical_activity": {
+      "title": "WHO Guidelines on Physical Activity and Sedentary Behaviour",
+      "organization": "World Health Organization",
+      "year": 2020,
+      "url": "https://www.ncbi.nlm.nih.gov/books/NBK566046/",
+      "role": "public_health_activity_guideline",
+      "use_for": [
+        "weekly aerobic activity minimums",
+        "muscle-strengthening frequency minimums",
+        "major-muscle-group coverage"
+      ],
+      "do_not_use_for": [
+        "exercise technique details",
+        "bodybuilding split design",
+        "individual load selection"
+      ],
+      "last_verified": "2026-05-10"
+    },
+    "hhs_2018_physical_activity": {
+      "title": "Physical Activity Guidelines for Americans, 2nd edition",
+      "organization": "U.S. Department of Health and Human Services",
+      "year": 2018,
+      "url": "https://odphp.health.gov/our-work/nutrition-physical-activity/physical-activity-guidelines/current-guidelines",
+      "role": "us_public_health_activity_guideline",
+      "use_for": [
+        "U.S.-facing weekly activity guidance",
+        "muscle-strengthening frequency minimums",
+        "major-muscle-group coverage"
+      ],
+      "do_not_use_for": [
+        "exercise technique details",
+        "bodybuilding split design",
+        "individual load selection"
+      ],
+      "last_verified": "2026-05-10"
+    },
+    "ace_exercise_library": {
+      "title": "ACE Exercise Library",
+      "organization": "American Council on Exercise",
+      "year": 2026,
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/",
+      "role": "exercise_reference_library",
+      "use_for": [
+        "exercise names",
+        "target body parts",
+        "equipment categories",
+        "difficulty labels",
+        "form-reference review"
+      ],
+      "do_not_use_for": [
+        "weekly volume prescriptions",
+        "medical clearance",
+        "copying proprietary exercise descriptions into generated programs"
+      ],
+      "last_verified": "2026-05-10"
+    },
+    "muscle_and_strength_workout_routines": {
+      "title": "Workout Routines Database: 1000+ Free Workout Plans",
+      "organization": "Muscle & Strength",
+      "year": 2026,
+      "url": "https://www.muscleandstrength.com/workout-routines",
+      "role": "program_examples_and_split_patterns",
+      "use_for": [
+        "common workout categories",
+        "split-pattern examples",
+        "experience-level labels",
+        "practical exercise-pairing inspiration"
+      ],
+      "do_not_use_for": [
+        "primary evidence for safety or dosing",
+        "medical recommendations",
+        "copying full routines or article text into generated programs"
+      ],
+      "last_verified": "2026-05-10"
+    }
+  }
+}

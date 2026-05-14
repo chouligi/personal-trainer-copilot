@@ -117,6 +117,17 @@ def build_html_context(program: dict, manifest: dict, user: str) -> dict:
         "fat_loss_non_negotiables": [ascii_clean(x) for x in program["fat_loss_non_negotiables"]],
         "non_gym_guidance": [ascii_clean(x) for x in program["non_gym_guidance"]],
         "schedule_example": [ascii_clean(x) for x in program["schedule_example"]],
+        "sources": [
+            {
+                "id": ascii_clean(str(source.get("id", ""))),
+                "title": ascii_clean(str(source.get("title", ""))),
+                "organization": ascii_clean(str(source.get("organization", ""))),
+                "year": source.get("year", ""),
+                "url": ascii_clean(str(source.get("url", ""))),
+                "role": ascii_clean(str(source.get("role", ""))),
+            }
+            for source in program.get("sources", [])
+        ],
     }
 
 

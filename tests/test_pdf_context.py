@@ -19,6 +19,16 @@ def test_context_handles_missing_images():
         "fat_loss_non_negotiables": ["n1"],
         "non_gym_guidance": ["g1"],
         "schedule_example": ["s1"],
+        "sources": [
+            {
+                "id": "muscle_and_strength_workout_routines",
+                "title": "Workout Routines Database: 1000+ Free Workout Plans",
+                "organization": "Muscle & Strength",
+                "year": 2026,
+                "url": "https://www.muscleandstrength.com/workout-routines",
+                "role": "program_examples_and_split_patterns",
+            }
+        ],
         "days": {
             "A": {
                 "title": "Day A",
@@ -39,3 +49,4 @@ def test_context_handles_missing_images():
     assert exercise_rows[0]["sets"] == "3"
     assert exercise_rows[0]["reps"] == "8"
     assert "credits" not in ctx
+    assert ctx["sources"][0]["id"] == "muscle_and_strength_workout_routines"

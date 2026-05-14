@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from src.program_io import AppPaths, load_program_templates, load_progression_rules
+from src.program_io import AppPaths, load_evidence_sources, load_program_templates, load_progression_rules
 from src.time_cap import enforce_session_duration_cap, estimate_day_duration_minutes
 
 
@@ -41,6 +41,61 @@ def validate_templates_config(config: dict) -> None:
 def validate_progression_config(config: dict) -> None:
     if "goal_profiles" not in config or not isinstance(config["goal_profiles"], dict):
         raise ValueError("config/progression_rules.json must contain 'goal_profiles' object")
+
+
+def validate_evidence_sources_config(config: dict) -> None:
+    sources = config.get("sources")
+    if not isinstance(sources, dict) or not sources:
+        raise ValueError("config/evidence_sources.json must contain non-empty 'sources' object")
+    for source_id, source in sources.items():
+        if not isinstance(source, dict):
+            raise ValueError(f"Evidence source '{source_id}' must be an object")
+        for field in ["title", "organization", "year", "url", "role", "use_for", "do_not_use_for", "last_verified"]:
+            if field not in source:
+                raise ValueError(f"Evidence source '{source_id}' missing field '{field}'")
+
+
+def _collect_source_ids(value) -> set[str]:
+    if isinstance(value, dict):
+        found: set[str] = set()
+        for key, child in value.items():
+            if key in {"source_ids", "evidence_ids"}:
+                found.update(str(item) for item in child if isinstance(child, list))
+            else:
+                found.update(_collect_source_ids(child))
+        return found
+    if isinstance(value, list):
+        found: set[str] = set()
+        for item in value:
+            found.update(_collect_source_ids(item))
+        return found
+    return set()
+
+
+def validate_source_references(source_ids: set[str], evidence_cfg: dict) -> None:
+    known = set(evidence_cfg.get("sources", {}).keys())
+    missing = sorted(source_ids - known)
+    if missing:
+        raise ValueError(f"Unknown evidence source ids referenced by config: {missing}")
+
+
+def build_source_summary(source_ids: set[str], evidence_cfg: dict) -> list[dict]:
+    sources = evidence_cfg.get("sources", {})
+    summary = []
+    for source_id in sorted(source_ids):
+        source = sources[source_id]
+        summary.append(
+            {
+                "id": source_id,
+                "title": source["title"],
+                "organization": source["organization"],
+                "year": source["year"],
+                "url": source["url"],
+                "role": source["role"],
+                "last_verified": source["last_verified"],
+            }
+        )
+    return summary
 
 
 def resolve_goal_key(goal: str, progression_cfg: dict) -> str:
@@ -103,8 +158,12 @@ def validate_program_constraints(program: dict) -> None:
 def build_program(paths: AppPaths, profile: dict, days: int, goal: str) -> dict:
     templates_cfg = load_program_templates(paths)
     progression_cfg = load_progression_rules(paths)
+    evidence_cfg = load_evidence_sources(paths)
     validate_templates_config(templates_cfg)
     validate_progression_config(progression_cfg)
+    validate_evidence_sources_config(evidence_cfg)
+    source_ids = _collect_source_ids(templates_cfg) | _collect_source_ids(progression_cfg)
+    validate_source_references(source_ids, evidence_cfg)
 
     selected_days = templates_cfg["days"][:days]
     program_days = {
@@ -131,6 +190,8 @@ def build_program(paths: AppPaths, profile: dict, days: int, goal: str) -> dict:
         "non_gym_guidance": defaults["non_gym_guidance"],
         "fat_loss_non_negotiables": defaults["fat_loss_non_negotiables"],
         "schedule_example": [f"Day {k}: training" for k in program_days.keys()],
+        "source_ids": sorted(source_ids),
+        "sources": build_source_summary(source_ids, evidence_cfg),
     }
 
     apply_goal_rules(program, progression_cfg, goal)

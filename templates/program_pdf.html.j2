@@ -147,6 +147,16 @@
         <h4>Non-Gym Guidance</h4>
         <ul>{% for item in non_gym_guidance %}<li>{{ item }}</li>{% endfor %}</ul>
       </article>
+      {% if sources %}
+      <article class="guide-card sources-card">
+        <h4>Sources</h4>
+        <ul>
+          {% for source in sources %}
+            <li>{{ source.organization }} ({{ source.year }}): {{ source.title }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+      {% endif %}
     </section>
   </section>
 </body>

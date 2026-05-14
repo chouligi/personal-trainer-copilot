@@ -1,4 +1,11 @@
 {
+  "source_ids": [
+    "acsm_2026_resistance_training",
+    "who_2020_physical_activity",
+    "hhs_2018_physical_activity",
+    "ace_exercise_library",
+    "muscle_and_strength_workout_routines"
+  ],
   "days": [
     {
       "key": "A",

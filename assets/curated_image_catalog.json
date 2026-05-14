@@ -119,6 +119,30 @@
       "source_url": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/front_plank.png",
       "license": "Self-generated",
       "image_path": "/Users/Fosa/PythonProjects/git_tree/personal-trainer-copilot/assets/exercise_library/front_plank.png"
+    },
+    "seated_hamstring_curl": {
+      "exercise": "Seated Hamstring Curl",
+      "title": "Curated library image for Seated Hamstring Curl",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/seated_hamstring_curl.png",
+      "license": "Self-generated",
+      "image_path": "assets/exercise_library/seated_hamstring_curl.png"
+    },
+    "hamstring_curl_machine": {
+      "exercise": "Hamstring Curl Machine",
+      "title": "Curated library image for Hamstring Curl Machine",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/hamstring_curl_machine.png",
+      "license": "Self-generated",
+      "image_path": "assets/exercise_library/hamstring_curl_machine.png"
+    },
+    "incline_bench_crunches": {
+      "exercise": "Incline Bench Crunches",
+      "title": "Curated library image for Incline Bench Crunches",
+      "author": "Local library",
+      "source_url": "assets/exercise_library/incline_bench_crunches.png",
+      "license": "Self-generated",
+      "image_path": "assets/exercise_library/incline_bench_crunches.png"
     }
   }
 }

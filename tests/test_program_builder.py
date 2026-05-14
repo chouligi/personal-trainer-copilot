@@ -10,3 +10,5 @@ def test_build_program_from_config():
     assert len(program["days"]) == 3
     assert program["goal"] == "fat_loss"
     assert "session_cap_minutes" in program
+    assert "muscle_and_strength_workout_routines" in program["source_ids"]
+    assert any(source["id"] == "acsm_2026_resistance_training" for source in program["sources"])

@@ -1,4 +1,9 @@
 {
+  "source_ids": [
+    "acsm_2026_resistance_training",
+    "who_2020_physical_activity",
+    "hhs_2018_physical_activity"
+  ],
   "default_goal": "general_fitness",
   "goal_aliases": {
     "fat_loss_strength_retention": "fat_loss",

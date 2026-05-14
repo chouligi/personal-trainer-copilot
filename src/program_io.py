@@ -16,6 +16,7 @@ class AppPaths:
     image_library_dir: Path
     image_manifest: Path
     curated_catalog: Path
+    evidence_sources: Path
     templates_dir: Path
     config_dir: Path
 
@@ -49,6 +50,7 @@ def get_paths(root: Path | None = None) -> AppPaths:
         image_library_dir=assets / "exercise_library",
         image_manifest=assets / "image_manifest.json",
         curated_catalog=assets / "curated_image_catalog.json",
+        evidence_sources=base / "config" / "evidence_sources.json",
         templates_dir=base / "templates",
         config_dir=base / "config",
     )
@@ -100,3 +102,9 @@ def load_progression_rules(paths: AppPaths) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"Missing config file: {path}")
     return read_json(path)
+
+
+def load_evidence_sources(paths: AppPaths) -> dict:
+    if not paths.evidence_sources.exists():
+        raise FileNotFoundError(f"Missing config file: {paths.evidence_sources}")
+    return read_json(paths.evidence_sources)

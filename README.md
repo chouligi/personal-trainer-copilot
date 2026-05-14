@@ -5,6 +5,7 @@ This project supports a review-first workflow with local-only curated images.
 ## Key Principles
 
 - Program generation is config-driven (`config/*.json`), not hardcoded in Python.
+- Program rules and templates reference curated source IDs from `config/evidence_sources.json`.
 - Exercise images are local-only from `assets/exercise_library`.
 - PDF rendering is HTML/CSS based via WeasyPrint.
 
@@ -14,6 +15,7 @@ This project supports a review-first workflow with local-only curated images.
 - `src/` - modular services (`program_io`, `profile_service`, `program_builder`, `time_cap`, `image_library`, `pdf_render`)
 - `config/program_templates.json` - day templates
 - `config/progression_rules.json` - goal progression rules
+- `config/evidence_sources.json` - approved source catalog for guideline and template provenance
 - `profiles/<user>.json` - user profiles
 - `programs/<user>_draft.json` - editable draft
 - `programs/<user>_final.json` - approved final program
@@ -45,6 +47,8 @@ python generate_program.py generate-draft --user fosa --days 3 --goal fat_loss
 ```
 
 Review/edit `programs/fosa_draft.json`.
+
+Generated drafts include `source_ids` and `sources` so reviewers can see which approved resources informed the program. Use clinical or public-health guidelines such as ACSM, WHO, and HHS for dosing, frequency, and safety-related defaults. Use sources such as Muscle & Strength only as practical examples for split patterns, workout categories, and exercise-pairing ideas; do not copy full routines or use them as the primary safety authority.
 
 ### 3) Approve final
 
